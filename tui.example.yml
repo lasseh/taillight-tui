@@ -1,0 +1,30 @@
+# taillight-tui configuration.
+#
+# Default location (first match wins):
+#   $XDG_CONFIG_HOME/taillight/tui.yml
+#   ~/.config/taillight/tui.yml
+# Override with: taillight-tui -c /path/to/tui.yml
+#
+# Every value can also be supplied on the command line; CLI flags win over the
+# file (-s/--server, -k/--key, --insecure).
+
+server:
+  # Base URL of the Taillight API server.
+  url: https://taillight.example.com
+  # API key with the "read" scope (looks like tl_xxxxxxxx...).
+  api_key: tl_xxxxxxxxxxxxxxxxxxxx
+  # Skip TLS certificate verification (e.g. self-signed dev certs). INSECURE.
+  tls_skip_verify: false
+
+display:
+  # Render frame rate, 1-60 (clamped).
+  fps: 30
+  # Number of events kept in memory per feed (the scrollback ring size).
+  buffer_size: 10000
+  # How often the SSE channel is drained into the views, in milliseconds.
+  batch_interval_ms: 50
+  # Follow new events as they arrive (jump to the newest row). Set false to
+  # keep the cursor where it is while new events stream in below.
+  auto_scroll: true
+  # Go reference-time layout for the timestamp column.
+  time_format: "15:04:05"

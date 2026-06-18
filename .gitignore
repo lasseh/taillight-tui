@@ -1,0 +1,21 @@
+# Build artifacts
+/taillight-tui
+/taillight-tui-linux-amd64
+/taillight-wish
+/taillight-wish-linux-amd64
+
+# Coverage
+coverage.out
+coverage.html
+
+# Local config / secrets (never commit API keys or host keys)
+/config.yml
+/tui.yml
+*.local.yml
+.ssh/
+*.pem
+
+# Editor / OS
+.DS_Store
+.idea/
+*.swp

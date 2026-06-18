@@ -1,0 +1,13 @@
+.git
+.github
+*.md
+LICENSE
+taillight-tui
+taillight-tui-linux-amd64
+taillight-wish
+taillight-wish-linux-amd64
+coverage.out
+coverage.html
+config.yml
+tui.yml
+tui.example.yml
