@@ -166,6 +166,18 @@ func (m *Model[T]) EventCount() int {
 	return len(m.events)
 }
 
+// ClearEvents drops all buffered events and resets the table. Called when the
+// server-side filter changes so events that no longer match don't linger on
+// screen; the restarted stream's backfill repopulates the view. Closes the
+// detail sidebar since its event may no longer match the filter.
+func (m *Model[T]) ClearEvents() {
+	m.buf.Clear()
+	if m.detail != nil {
+		m.CloseDetail()
+	}
+	m.rebuildTable()
+}
+
 // FocusFilter activates the filter input. Returns the textinput's focus
 // command (cursor blink) which the caller MUST forward to bubbletea via
 // the Update return value — otherwise the cursor won't blink and the

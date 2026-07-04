@@ -96,6 +96,39 @@ func TestPushEventsOverflow(t *testing.T) {
 	}
 }
 
+func TestClearEvents(t *testing.T) {
+	m := newTestModel(t, 100)
+	m.PushEvents([]fakeEvent{
+		{ID: 1, Message: "stale"},
+		{ID: 2, Message: "old"},
+	})
+	if got := m.EventCount(); got != 2 {
+		t.Fatalf("EventCount before ClearEvents = %d, want 2", got)
+	}
+	m.ClearEvents()
+	if got := m.EventCount(); got != 0 {
+		t.Errorf("EventCount after ClearEvents = %d, want 0", got)
+	}
+	// New events after a clear must still render.
+	m.PushEvents([]fakeEvent{{ID: 3, Message: "fresh"}})
+	if got := m.EventCount(); got != 1 {
+		t.Errorf("EventCount after push post-clear = %d, want 1", got)
+	}
+}
+
+func TestClearEventsClosesDetail(t *testing.T) {
+	m := newTestModel(t, 100)
+	m.PushEvents([]fakeEvent{{ID: 1, Message: "stale"}})
+	updated, _ := m.UpdateTable(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !updated.DetailOpen() {
+		t.Fatal("detail should be open after Enter")
+	}
+	updated.ClearEvents()
+	if updated.DetailOpen() {
+		t.Error("detail should close on ClearEvents — its event may no longer match")
+	}
+}
+
 func TestEmptyStateView(t *testing.T) {
 	m := newTestModel(t, 100)
 	view := m.View()

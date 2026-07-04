@@ -23,18 +23,21 @@ func (a *App) startStream(tab TabID) tea.Cmd {
 	switch tab {
 	case TabSrvlog:
 		params := a.srvlog.Filter().Params()
+		a.streamParams[tab] = params.Encode()
 		return func() tea.Msg {
 			stream := client.NewSSEStream(c, "/api/v1/srvlog/stream", params, 0)
 			return StreamStartedMsg{Feed: "srvlog", Stream: stream}
 		}
 	case TabApplog:
 		params := a.applog.Filter().Params()
+		a.streamParams[tab] = params.Encode()
 		return func() tea.Msg {
 			stream := client.NewSSEStream(c, "/api/v1/applog/stream", params, 0)
 			return StreamStartedMsg{Feed: "applog", Stream: stream}
 		}
 	case TabNetlog:
 		params := a.netlog.Filter().Params()
+		a.streamParams[tab] = params.Encode()
 		return func() tea.Msg {
 			stream := client.NewSSEStream(c, "/api/v1/netlog/stream", params, 0)
 			return StreamStartedMsg{Feed: "netlog", Stream: stream}

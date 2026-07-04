@@ -38,7 +38,15 @@ func (a *App) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Filter input takes priority when focused so number keys (1-7) and
 	// vim navigation don't get hijacked while the user is typing a search.
 	if a.focus == FocusFilter {
-		if key.Matches(msg, a.keys.Escape) || msg.String() == "enter" {
+		if msg.String() == "enter" {
+			// Commit the search: restart the tab's stream so the server
+			// applies the new search param (filtering is server-side).
+			a.focus = FocusTable
+			a.blurActiveFilter()
+			cmd := a.restartStream(a.activeTab)
+			return a, cmd
+		}
+		if key.Matches(msg, a.keys.Escape) {
 			a.focus = FocusTable
 			a.blurActiveFilter()
 			return a, nil
@@ -179,25 +187,41 @@ func (a *App) applyPopupFilter(values map[string]string) tea.Cmd {
 	return nil
 }
 
-// restartStream closes the active stream for the tab (if any) and starts a
-// fresh one with the current filter parameters.
+// restartStream closes the active stream for the tab (if any), clears the
+// view's buffer so stale non-matching events don't linger, and starts a fresh
+// stream with the current filter parameters. No-op when the parameters are
+// unchanged — restarting would needlessly wipe the buffer for an identical
+// stream. The new stream's server-side backfill repopulates the view with
+// recent matching events.
 func (a *App) restartStream(tab TabID) tea.Cmd {
 	switch tab {
 	case TabSrvlog:
+		if a.srvlogStream != nil && a.streamParams[tab] == a.srvlog.Filter().Params().Encode() {
+			return nil
+		}
 		if a.srvlogStream != nil {
 			a.srvlogStream.Close()
 			a.srvlogStream = nil
 		}
+		a.srvlog.ClearEvents()
 	case TabApplog:
+		if a.applogStream != nil && a.streamParams[tab] == a.applog.Filter().Params().Encode() {
+			return nil
+		}
 		if a.applogStream != nil {
 			a.applogStream.Close()
 			a.applogStream = nil
 		}
+		a.applog.ClearEvents()
 	case TabNetlog:
+		if a.netlogStream != nil && a.streamParams[tab] == a.netlog.Filter().Params().Encode() {
+			return nil
+		}
 		if a.netlogStream != nil {
 			a.netlogStream.Close()
 			a.netlogStream = nil
 		}
+		a.netlog.ClearEvents()
 	case TabDashboard:
 		return nil
 	}

@@ -84,6 +84,10 @@ type App struct {
 	applogStream *client.SSEStream
 	netlogStream *client.SSEStream
 
+	// Encoded query params each stream was started with, used by
+	// restartStream to skip no-op restarts that would wipe the buffer.
+	streamParams map[TabID]string
+
 	// Notification toasts.
 	toasts component.ToastQueue
 
@@ -118,19 +122,20 @@ func NewApp(cfg Config, c *client.Client) *App {
 	}
 
 	return &App{
-		cfg:       cfg,
-		client:    c,
-		keys:      DefaultKeyMap(),
-		activeTab: TabDashboard,
-		focus:     FocusTable,
-		srvlog:    srvlog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
-		applog:    applog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
-		netlog:    netlog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
-		dashboard: dashboard.New(c),
-		toasts:    component.NewToastQueue(),
-		tabBar:    component.NewTabBar(tabs),
-		statusBar: component.NewStatusBar(),
-		helpModel: help.New(),
+		cfg:          cfg,
+		client:       c,
+		keys:         DefaultKeyMap(),
+		activeTab:    TabDashboard,
+		focus:        FocusTable,
+		srvlog:       srvlog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
+		applog:       applog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
+		netlog:       netlog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
+		dashboard:    dashboard.New(c),
+		toasts:       component.NewToastQueue(),
+		streamParams: make(map[TabID]string),
+		tabBar:       component.NewTabBar(tabs),
+		statusBar:    component.NewStatusBar(),
+		helpModel:    help.New(),
 	}
 }
 
