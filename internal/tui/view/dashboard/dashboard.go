@@ -43,6 +43,7 @@ type Model struct {
 	criticalLogs []client.SrvlogEvent
 	recentErrors []client.AppLogEvent
 	loading      bool
+	loadFailed   bool // last stats load returned an error
 	lastLoad     time.Time
 	width        int
 	height       int
@@ -126,10 +127,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case StatsLoadedMsg:
 		m.loading = false
-		m.lastLoad = time.Now()
 		if msg.Err != nil {
+			// Keep previous data and the previous Updated timestamp;
+			// surface the failure in the footer instead.
+			m.loadFailed = true
 			return m, nil
 		}
+		m.loadFailed = false
+		m.lastLoad = time.Now()
 		m.srvlog = msg.Srvlog
 		m.applog = msg.Applog
 		m.criticalLogs = msg.CriticalLogs
@@ -198,10 +203,18 @@ func (m *Model) View() string {
 	}
 
 	// Footer.
-	if !m.lastLoad.IsZero() {
+	if !m.lastLoad.IsZero() || m.loadFailed {
+		sep := theme.Comment.Render("  ·  ")
+		parts := make([]string, 0, 3)
+		if m.loadFailed {
+			parts = append(parts, lipgloss.NewStyle().Foreground(theme.ColorRed).Render("last refresh failed"))
+		}
+		if !m.lastLoad.IsZero() {
+			parts = append(parts, theme.Comment.Render(fmt.Sprintf("Updated %s", m.lastLoad.Format("15:04:05"))))
+		}
+		parts = append(parts, theme.Comment.Render("r refresh  ·  24h range"))
 		sections = append(sections, "")
-		sections = append(sections, theme.Comment.Render(
-			fmt.Sprintf("  Updated %s  ·  r refresh  ·  24h range", m.lastLoad.Format("15:04:05"))))
+		sections = append(sections, "  "+strings.Join(parts, sep))
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
@@ -454,6 +467,12 @@ func (m *Model) refreshTick() tea.Cmd {
 	return tea.Tick(refreshInterval, func(time.Time) tea.Msg {
 		return RefreshTickMsg{}
 	})
+}
+
+// RefreshTickCmd schedules the next RefreshTickMsg. The app calls this to
+// keep the refresh chain alive while the dashboard tab is not visible.
+func (m *Model) RefreshTickCmd() tea.Cmd {
+	return m.refreshTick()
 }
 
 var refreshKey = key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh"))

@@ -210,7 +210,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.dashboard, cmd = a.dashboard.Update(msg)
 			return a, cmd
 		}
-		return a, nil
+		// Keep the refresh chain alive while another tab is visible;
+		// skip the load since the dashboard isn't rendered.
+		return a, a.dashboard.RefreshTickCmd()
 
 	case component.FilterPopupAppliedMsg:
 		cmd := a.applyPopupFilter(msg.Values)
