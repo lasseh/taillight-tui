@@ -2,6 +2,8 @@ package tui
 
 import (
 	"net/url"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,6 +63,67 @@ func TestSearchEnterAppliesToStream(t *testing.T) {
 	}
 	if got := a.srvlog.EventCount(); got != 0 {
 		t.Errorf("EventCount after filter change = %d, want 0 (stale events must clear)", got)
+	}
+}
+
+// TestFilterPills guards the encoded-params → status bar pill translation:
+// labels must be compact, in fixed display order, and cover both the
+// srvlog/netlog and applog param vocabularies.
+func TestFilterPills(t *testing.T) {
+	tests := []struct {
+		name    string
+		encoded string
+		want    []string
+	}{
+		{name: "empty params", encoded: "", want: nil},
+		{name: "search only", encoded: "search=error", want: []string{"/error"}},
+		{
+			name: "srvlog fields in display order",
+			encoded: url.Values{
+				"severity_max": {"4"},
+				"hostname":     {"core1"},
+				"search":       {"bgp"},
+			}.Encode(),
+			want: []string{"host=core1", "sev≤4", "/bgp"},
+		},
+		{
+			name: "applog fields",
+			encoded: url.Values{
+				"service":   {"api"},
+				"level":     {"WARN"},
+				"component": {"ingest"},
+			}.Encode(),
+			want: []string{"svc=api", "comp=ingest", "lvl=WARN"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := filterPills(tt.encoded); !slices.Equal(got, tt.want) {
+				t.Errorf("filterPills(%q) = %v, want %v", tt.encoded, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSearchEnterShowsFilterPill guards the pill wiring: committing a search
+// must surface it as a status bar pill for the active tab, and switching to
+// the (filterless) dashboard must clear the pills again.
+func TestSearchEnterShowsFilterPill(t *testing.T) {
+	a := NewApp(DefaultConfig(), nil)
+	a.activeTab = TabSrvlog
+	a.focus = FocusFilter
+	srvlog.Filter(&a.srvlog).ApplyPopupValues(map[string]string{"search": "error"})
+
+	a.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if got := a.statusBar.View(120); !strings.Contains(got, "/error") {
+		t.Errorf("status bar after search commit missing pill %q\nrendered: %q", "/error", got)
+	}
+
+	a.switchTab(TabDashboard)
+	if got := a.statusBar.View(120); strings.Contains(got, "/error") {
+		t.Errorf("status bar on dashboard still shows a pill\nrendered: %q", got)
 	}
 }
 

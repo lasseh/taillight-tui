@@ -402,5 +402,10 @@ func (a *App) switchTab(tab TabID) tea.Cmd {
 		}
 	}
 
+	// Pills are per-tab: show the params the new tab's stream runs with.
+	// startStream above records them synchronously, so this is current
+	// even when the stream itself is still connecting.
+	a.syncFilterPills()
+
 	return tea.Batch(cmds...)
 }

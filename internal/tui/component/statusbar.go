@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/lasseh/taillight-tui/internal/tui/highlight"
 	"github.com/lasseh/taillight-tui/internal/tui/theme"
 )
 
@@ -52,11 +53,14 @@ var (
 			Background(lipgloss.Color("#1e2030")).
 			Padding(0, 1)
 
-	segNew = lipgloss.NewStyle().
-		Foreground(theme.ColorBGDark).
-		Background(theme.ColorYellow).
-		Bold(true).
-		Padding(0, 1)
+	// segParseErr marks SSE decode failures: red family like segErr, but
+	// foreground-on-dark so the persistent counter reads as a warning
+	// rather than shouting like the full-error segment.
+	segParseErr = lipgloss.NewStyle().
+			Foreground(theme.ColorRed).
+			Background(lipgloss.Color("#1e2030")).
+			Bold(true).
+			Padding(0, 1)
 
 	segErr = lipgloss.NewStyle().
 		Foreground(theme.ColorBGDark).
@@ -72,6 +76,10 @@ var (
 	segFill = lipgloss.NewStyle().
 		Background(lipgloss.Color("#16161e"))
 )
+
+// maxPillWidth caps a single filter pill so one long search string cannot
+// crowd out the rest of the status bar.
+const maxPillWidth = 24
 
 // View renders the multi-segment status bar at the given width.
 func (s *StatusBar) View(width int) string {
@@ -98,24 +106,34 @@ func (s *StatusBar) View(width int) string {
 	// Parse error counter (visible when non-zero so production issues
 	// don't go unnoticed).
 	if s.parseErrors > 0 {
-		segments = append(segments, segNew.Render(
+		segments = append(segments, segParseErr.Render(
 			fmt.Sprintf("⚠ %d parse errors", s.parseErrors)))
-	}
-
-	// Active filter pills.
-	for _, f := range s.filters {
-		segments = append(segments, segFilter.Render(f))
 	}
 
 	// Right side: help.
 	helpSeg := segHelp.Render("/ search  ? help  q quit")
+	rightWidth := lipgloss.Width(helpSeg)
 
-	// Calculate fill.
+	// Active filter pills — width-aware: each pill is capped at
+	// maxPillWidth, and pills that would collide with the right-aligned
+	// help segment are dropped instead of wrapping the bar.
 	leftWidth := 0
 	for _, seg := range segments {
 		leftWidth += lipgloss.Width(seg)
 	}
-	rightWidth := lipgloss.Width(helpSeg)
+	avail := width - leftWidth - rightWidth
+	for _, f := range s.filters {
+		pill := segFilter.Render(highlight.Truncate(f, maxPillWidth))
+		w := lipgloss.Width(pill)
+		if w > avail {
+			break
+		}
+		segments = append(segments, pill)
+		leftWidth += w
+		avail -= w
+	}
+
+	// Calculate fill.
 	fillWidth := max(0, width-leftWidth-rightWidth)
 
 	fill := segFill.Width(fillWidth).Render("")

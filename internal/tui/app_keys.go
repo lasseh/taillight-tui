@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"net/url"
+
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
@@ -43,6 +45,7 @@ func (a *App) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			a.focus = FocusTable
 			a.blurActiveFilter()
 			cmd := a.restartStream(a.activeTab)
+			a.syncFilterPills()
 			return a, cmd
 		}
 		if key.Matches(msg, a.keys.Escape) {
@@ -165,25 +168,65 @@ func (a *App) activeFilterFields() []component.Field {
 // that tab's SSE stream so the server-side filters take effect immediately.
 func (a *App) applyPopupFilter(values map[string]string) tea.Cmd {
 	a.closePopup()
+	var cmd tea.Cmd
 	switch a.activeTab {
 	case TabSrvlog:
 		if f := srvlog.Filter(&a.srvlog); f != nil {
 			f.ApplyPopupValues(values)
 		}
-		return a.restartStream(TabSrvlog)
+		cmd = a.restartStream(TabSrvlog)
 	case TabNetlog:
 		if f := srvlog.Filter(&a.netlog); f != nil {
 			f.ApplyPopupValues(values)
 		}
-		return a.restartStream(TabNetlog)
+		cmd = a.restartStream(TabNetlog)
 	case TabApplog:
 		if f := applog.Filter(&a.applog); f != nil {
 			f.ApplyPopupValues(values)
 		}
-		return a.restartStream(TabApplog)
+		cmd = a.restartStream(TabApplog)
 	case TabDashboard:
+		return nil
 	}
-	return nil
+	a.syncFilterPills()
+	return cmd
+}
+
+// syncFilterPills refreshes the status bar pills from the params the active
+// tab's stream is actually running with. Called at every commit point (popup
+// apply, search enter, tab switch) so pills always reflect the server-side
+// filtering in effect, never half-typed input.
+func (a *App) syncFilterPills() {
+	a.statusBar.SetFilters(filterPills(a.streamParams[a.activeTab]))
+}
+
+// filterPills converts a stream's encoded query params into compact status
+// bar pill labels in a fixed display order. Keys cover all feeds: srvlog and
+// netlog use hostname/programname/severity_max/facility, applog uses
+// service/component/host/level; search is shared.
+func filterPills(encoded string) []string {
+	vals, err := url.ParseQuery(encoded)
+	if err != nil || len(vals) == 0 {
+		return nil
+	}
+	order := []struct{ key, label, sep string }{
+		{"hostname", "host", "="},
+		{"host", "host", "="},
+		{"programname", "prog", "="},
+		{"service", "svc", "="},
+		{"component", "comp", "="},
+		{"severity_max", "sev", "≤"},
+		{"facility", "fac", "="},
+		{"level", "lvl", "="},
+		{"search", "/", ""},
+	}
+	pills := make([]string, 0, len(vals))
+	for _, o := range order {
+		if v := vals.Get(o.key); v != "" {
+			pills = append(pills, o.label+o.sep+v)
+		}
+	}
+	return pills
 }
 
 // restartStream closes the active stream for the tab (if any), clears the
