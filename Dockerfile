@@ -1,6 +1,9 @@
 # Builds the taillight-wish SSH server.
 #
-#   docker build -t taillight-wish .
+#   make docker
+#
+# (or: docker build --build-arg VERSION=$(git describe --tags --always --dirty) -t taillight-wish .)
+# Without the VERSION build-arg the image reports --version as "dev".
 #
 FROM golang:alpine AS build
 RUN apk add --no-cache git

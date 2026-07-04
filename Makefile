@@ -12,7 +12,7 @@ else
 endif
 
 .PHONY: build build-tui build-wish build-linux build-tui-linux build-wish-linux \
-	run-tui test lint fix tidy vulncheck coverage clean help
+	docker run-tui test lint fix tidy vulncheck coverage clean help
 
 ##@ General
 help: ## Show this help
@@ -34,6 +34,9 @@ build-tui-linux: ## Build taillight-tui for Linux amd64
 
 build-wish-linux: ## Build taillight-wish for Linux amd64
 	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) $(LDFLAGS) -o taillight-wish-linux-amd64 ./cmd/taillight-wish
+
+docker: ## Build the taillight-wish Docker image stamped with VERSION
+	docker build --build-arg VERSION=$(VERSION) -t taillight-wish .
 
 run-tui: ## Build and run the TUI (pass ARGS="-s URL -k KEY")
 	$(GO) run ./cmd/taillight-tui $(ARGS)
