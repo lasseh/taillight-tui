@@ -54,15 +54,6 @@ func (c *Client) ListAppLogs(ctx context.Context, filter AppLogFilter, cursor st
 	return &resp, nil
 }
 
-// GetAppLog fetches a single applog event by ID.
-func (c *Client) GetAppLog(ctx context.Context, id int64) (*AppLogEvent, error) {
-	var resp ItemResponse[AppLogEvent]
-	if err := c.get(ctx, fmt.Sprintf("/api/v1/applog/%d", id), &resp); err != nil {
-		return nil, fmt.Errorf("get applog %d: %w", id, err)
-	}
-	return &resp.Data, nil
-}
-
 // AppLogServices fetches the list of known applog service names.
 func (c *Client) AppLogServices(ctx context.Context) ([]string, error) {
 	var resp ItemResponse[[]string]

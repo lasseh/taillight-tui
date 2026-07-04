@@ -28,15 +28,6 @@ func (c *Client) ListNetlogs(ctx context.Context, filter NetlogFilter, cursor st
 	return &resp, nil
 }
 
-// GetNetlog fetches a single netlog event by ID.
-func (c *Client) GetNetlog(ctx context.Context, id int64) (*NetlogEvent, error) {
-	var resp ItemResponse[NetlogEvent]
-	if err := c.get(ctx, fmt.Sprintf("/api/v1/netlog/%d", id), &resp); err != nil {
-		return nil, fmt.Errorf("get netlog %d: %w", id, err)
-	}
-	return &resp.Data, nil
-}
-
 // NetlogHosts fetches the list of known netlog hostnames.
 func (c *Client) NetlogHosts(ctx context.Context) ([]string, error) {
 	var resp ItemResponse[[]string]

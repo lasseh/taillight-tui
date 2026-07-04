@@ -36,6 +36,9 @@ type AppLogEvent struct {
 	Msg        string          `json:"msg"`
 	Source     string          `json:"source"`
 	Attrs      json.RawMessage `json:"attrs"`
+	// AttrsTruncated is set by the server on list/SSE responses when attrs
+	// exceeded the inline size cap and were omitted from the payload.
+	AttrsTruncated bool `json:"attrs_truncated,omitempty"`
 }
 
 // NetlogEvent is identical to SrvlogEvent for network log entries.
@@ -51,14 +54,6 @@ type ListResponse[T any] struct {
 // ItemResponse is the standard single-item envelope.
 type ItemResponse[T any] struct {
 	Data T `json:"data"`
-}
-
-// UserInfo represents the authenticated user.
-type UserInfo struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	IsAdmin  bool   `json:"is_admin"`
 }
 
 // SrvlogDeviceSummary represents a device-level summary.

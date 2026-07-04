@@ -54,15 +54,6 @@ func (c *Client) ListSrvlogs(ctx context.Context, filter SrvlogFilter, cursor st
 	return &resp, nil
 }
 
-// GetSrvlog fetches a single srvlog event by ID.
-func (c *Client) GetSrvlog(ctx context.Context, id int64) (*SrvlogEvent, error) {
-	var resp ItemResponse[SrvlogEvent]
-	if err := c.get(ctx, fmt.Sprintf("/api/v1/srvlog/%d", id), &resp); err != nil {
-		return nil, fmt.Errorf("get srvlog %d: %w", id, err)
-	}
-	return &resp.Data, nil
-}
-
 // SrvlogHosts fetches the list of known srvlog hostnames.
 func (c *Client) SrvlogHosts(ctx context.Context) ([]string, error) {
 	var resp ItemResponse[[]string]

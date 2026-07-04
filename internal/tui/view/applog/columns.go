@@ -134,6 +134,13 @@ func renderDetailPanel(e client.AppLogEvent, width int) string {
 			}
 		}
 		b.WriteString("\n")
+	} else if e.AttrsTruncated {
+		// The server omits oversized attrs from list/SSE payloads and sets
+		// attrs_truncated — without this hint they would look absent.
+		b.WriteString("\n")
+		kv("Attributes", "")
+		b.WriteString(theme.Comment.Render("(truncated — attrs exceeded the stream size cap and were omitted)"))
+		b.WriteString("\n")
 	}
 
 	return b.String()
