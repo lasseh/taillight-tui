@@ -1,43 +1,40 @@
 # Follow-ups
 
-Improvements deferred during the extraction from the main Taillight repo. None
-block correctness today; they were left out of the migration to keep it
-behaviour-preserving and reviewable. Roughly ordered by value.
+Remaining deferred work. The original extraction follow-up list was executed in
+the 2026-07-04 review round (see `.scratch/arch-review/REPORT.md` — 4 lenses,
+refute-by-default fact-check, 58 claims / 0 refuted) on branch
+`chore/arch-review-execution`: generic SSE drain (`client.Drain[T]`), netlog
+view package collapsed into the shared `logview` instantiation, shared
+`highlight.AttrsInline`, width-aware `highlight.Truncate`/`PadRight`
+(rune/ANSI-safe), dashboard failure surfacing, SSE no-space field parsing +
+hermetic parser tests, distinct parse-error styling, statusbar filter pills,
+golden-fixture contract tests, plus seven functional bug fixes. The
+"configurable TabBar brand" item was dropped as speculative generality; the
+"generic feed client" item was obsoleted by dead-code removal.
 
-## Code consolidation
-- **Generic SSE drain helper.** `internal/tui/app_streams.go` has three
-  near-identical `drain*SSE` functions differing only in the unmarshal type.
-  Collapse to one `drainSSE[T any](stream *client.SSEStream, max int) ([]T, int)`.
-- **Generic syslog feed view.** `view/srvlog` and `view/netlog` are ~330 lines
-  of byte-for-byte duplicated columns/filter code (netlog aliases the srvlog
-  event type). Extract a shared, parameterised syslog feed package and keep thin
-  per-feed wrappers.
-- **Generic feed client.** `client/srvlog.go` and `client/netlog.go` duplicate
-  List/Get/Hosts/Programs/Summary, differing only in the path prefix.
-- **Shared attr formatter.** `formatAttrsInline` is duplicated between
-  `view/dashboard` and `view/applog`. Extract one helper; on marshal error fall
-  back to `fmt.Sprintf("%v", val)` rather than emitting an empty value.
+## Remaining
 
-## Correctness / UX
-- **Display-width truncation.** `truncate`/`padRight` in the column builders and
-  the toast component slice strings by byte index, which can split multi-byte
-  runes and miscompute width. Move to a rune- and display-width-aware helper
-  (e.g. via lipgloss/ansi width) shared across all feeds.
-- **Surface dashboard load failures.** `view/dashboard` now uses a timeout
-  context for `loadStats`, but a failed refresh is still swallowed in `Update`.
-  Show a "last refresh failed" indicator and/or keep the previous data.
-- **SSE field parsing.** `client/sse.go` only matches the `field: value` form
-  (with a space). Accept the spec-legal no-space form (`id:5`) and track
-  `lastID` on receipt of any event id, not only on dispatch.
-- **Distinct parse-error styling.** The status bar renders the cumulative
-  SSE parse-error counter with the same style as the benign "new events" badge.
-- **Column-width-aware cell truncation.** Row builders truncate to magic
+- **Column-width-aware cell truncation.** Row builders truncate cells to magic
   constants (20/16) that don't track the dynamically computed column widths.
+  Fixing this properly changes the adapter signatures so `eventToRow` receives
+  the computed widths — a small design item, not mechanical (review lens 03 R11).
 
-## Packaging
-- **Tag `pkg/logshipper`.** This repo currently depends on logshipper via a
-  pseudo-version of `github.com/lasseh/taillight`'s default branch. Cut a semver
-  tag (`pkg/logshipper/v0.1.0`) in the main repo and pin to it for reproducible,
-  proxy-cacheable builds.
-- **Configurable brand.** `component.TabBar` hardcodes the `[Taillight]` logo;
-  make it a field so the component is reusable.
+- **Tag `pkg/logshipper` and pin it.** This repo depends on logshipper via a
+  stale pseudo-version of the main repo's default branch — now behind an
+  upstream ingest-contract fix (client-side service validation + msg
+  truncation, main repo commit `f14db64`). The main repo adopted tagged
+  releases (its ADR-0005), so this is actionable **once the main repo's
+  `chore/arch-review-execution` branch merges and pushes**: cut
+  `pkg/logshipper/v0.1.0` there, then `go get` the tag here.
+
+- **rebuildTable render cache (measure first).** The O(buffer) lexer re-render
+  per 50 ms tick is *inferred* to lag on busy feeds, not measured — same
+  discipline as the main repo's live-feed perf item: profile under loadgen
+  before building a cache (review D1).
+
+- **Releases: staying untagged** until outside consumers appear (review D2).
+  Revisit when the repo is pushed and distributed.
+
+- **Refresh golden fixtures on API changes.** `internal/tui/client/testdata/`
+  documents the copy-from-main-repo procedure; re-copy after API contract
+  changes and let `TestGoldenContract` catch drift.
