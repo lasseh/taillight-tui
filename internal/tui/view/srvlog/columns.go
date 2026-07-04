@@ -41,9 +41,9 @@ func columns(width int) []table.Column {
 func eventToRow(e client.SrvlogEvent, timeFormat string) table.Row {
 	bar := theme.SeverityBar(e.Severity)
 	ts := theme.Timestamp.Render(" " + e.ReceivedAt.Local().Format(timeFormat) + " ")
-	sev := theme.SeverityStyle(e.Severity).Render(padRight(strings.ToUpper(e.SeverityLabel), fixedSeverityWidth-1) + " ")
-	host := theme.Hostname.Render(truncate(e.Hostname, 20))
-	prog := theme.Program.Render(truncate(e.Programname, 16))
+	sev := theme.SeverityStyle(e.Severity).Render(highlight.PadRight(strings.ToUpper(e.SeverityLabel), fixedSeverityWidth-1) + " ")
+	host := theme.Hostname.Render(highlight.Truncate(e.Hostname, 20))
+	prog := theme.Program.Render(highlight.Truncate(e.Programname, 16))
 	msg := highlight.Message(e.Message)
 
 	return table.Row{bar, ts, sev, host, prog, msg}
@@ -95,21 +95,4 @@ func renderDetailPanel(e client.SrvlogEvent, width int) string {
 	}
 
 	return b.String()
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
-}
-
-func padRight(s string, n int) string {
-	if len(s) >= n {
-		return s[:n]
-	}
-	return s + strings.Repeat(" ", n-len(s))
 }

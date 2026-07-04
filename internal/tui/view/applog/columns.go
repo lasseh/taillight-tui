@@ -3,7 +3,6 @@ package applog
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/table"
@@ -45,46 +44,18 @@ func columns(width int) []table.Column {
 func eventToRow(e client.AppLogEvent, timeFormat string) table.Row {
 	bar := lipglossBar(e.Level)
 	ts := theme.Timestamp.Render(" " + e.Timestamp.Local().Format(timeFormat) + " ")
-	lvl := theme.AppLogLevelStyle(e.Level).Render(padRight(e.Level, fixedLevelWidth-1) + " ")
-	svc := theme.Program.Render(truncate(e.Service, 20))
-	comp := lipgloss.NewStyle().Foreground(theme.ColorYellow).Render(truncate(e.Component, 16))
+	lvl := theme.AppLogLevelStyle(e.Level).Render(highlight.PadRight(e.Level, fixedLevelWidth-1) + " ")
+	svc := theme.Program.Render(highlight.Truncate(e.Service, 20))
+	comp := lipgloss.NewStyle().Foreground(theme.ColorYellow).Render(highlight.Truncate(e.Component, 16))
 
 	// Message + inline attrs (like the web GUI: "msg - key=val key=val").
 	msg := highlight.Message(e.Msg)
-	if attrs := formatAttrsInline(e.Attrs); attrs != "" {
+	if attrs := highlight.AttrsInline(e.Attrs); attrs != "" {
 		msg += " " + lipgloss.NewStyle().Foreground(theme.ColorOrange).Render("-") +
 			" " + theme.Comment.Render(attrs)
 	}
 
 	return table.Row{bar, ts, lvl, svc, comp, msg}
-}
-
-// formatAttrsInline renders attrs as "key=val key=val" like the web GUI.
-func formatAttrsInline(raw json.RawMessage) string {
-	if len(raw) == 0 || string(raw) == "{}" || string(raw) == "null" {
-		return ""
-	}
-	var attrs map[string]any
-	if err := json.Unmarshal(raw, &attrs); err != nil {
-		return ""
-	}
-	// Sort keys for stable output — map iteration order is random.
-	keys := make([]string, 0, len(attrs))
-	for k := range attrs {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		switch val := attrs[k].(type) {
-		case string:
-			parts = append(parts, k+"="+val)
-		default:
-			b, _ := json.Marshal(val)
-			parts = append(parts, k+"="+string(b))
-		}
-	}
-	return strings.Join(parts, " ")
 }
 
 func lipglossBar(level string) string {
@@ -144,21 +115,4 @@ func renderDetailPanel(e client.AppLogEvent, width int) string {
 	}
 
 	return b.String()
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
-}
-
-func padRight(s string, n int) string {
-	if len(s) >= n {
-		return s[:n]
-	}
-	return s + strings.Repeat(" ", n-len(s))
 }

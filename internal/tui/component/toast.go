@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/lasseh/taillight-tui/internal/tui/highlight"
 	"github.com/lasseh/taillight-tui/internal/tui/theme"
 )
 
@@ -114,11 +115,7 @@ func renderToast(t Toast, width int) string {
 
 	// Message — allow up to 3 lines of wrapping for visibility.
 	msgW := max(20, width-4)
-	msg := t.Message
-	maxLen := msgW * 3
-	if len(msg) > maxLen {
-		msg = msg[:maxLen-3] + "..."
-	}
+	msg := highlight.Truncate(t.Message, msgW*3)
 	msgLine := lipgloss.NewStyle().
 		Foreground(theme.ColorFGDark).
 		Background(bg).

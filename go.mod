@@ -9,6 +9,7 @@ require (
 	charm.land/wish/v2 v2.0.1
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/ssh v0.0.0-20250826160808-ebfa259c7309
+	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/lasseh/jink v0.1.2
 	github.com/lasseh/taillight/pkg/logshipper v0.0.0-20260609092555-6ac4d6a93a28
 	github.com/spf13/cobra v1.10.2
@@ -22,7 +23,6 @@ require (
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/charmbracelet/keygen v0.5.4 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260525132238-948f4557a654 // indirect
-	github.com/charmbracelet/x/ansi v0.11.7 // indirect
 	github.com/charmbracelet/x/conpty v0.1.1 // indirect
 	github.com/charmbracelet/x/errors v0.0.0-20251110184232-6ab307057ac7 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect

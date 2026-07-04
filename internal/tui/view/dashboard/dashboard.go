@@ -5,11 +5,9 @@ package dashboard
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"image/color"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -279,16 +277,16 @@ func (m *Model) renderRecentCritical() string {
 
 	// Iterate newest-last so the rendered panel reads oldest-on-top, newest at
 	// the bottom — matches every other log feed in the product. The producer
-	// (drainSrvlogCritical) prepends, so m.criticalLogs is newest-first.
+	// (drainStreams) prepends, so m.criticalLogs is newest-first.
 	for i := len(m.criticalLogs) - 1; i >= 0; i-- {
 		e := m.criticalLogs[i]
 		ts := theme.Timestamp.Render(e.ReceivedAt.Local().Format("15:04"))
-		sev := theme.SeverityStyle(e.Severity).Render(padRight(strings.ToUpper(e.SeverityLabel), 8))
-		host := theme.Hostname.Render(padRight(truncate(e.Hostname, 18), 18))
-		prog := theme.Program.Render(padRight(truncate(e.Programname, 12), 12))
+		sev := theme.SeverityStyle(e.Severity).Render(highlight.PadRight(strings.ToUpper(e.SeverityLabel), 8))
+		host := theme.Hostname.Render(highlight.PadRight(highlight.Truncate(e.Hostname, 18), 18))
+		prog := theme.Program.Render(highlight.PadRight(highlight.Truncate(e.Programname, 12), 12))
 
 		msgW := max(20, m.width-55)
-		msg := highlight.Message(truncate(e.Message, msgW))
+		msg := highlight.Message(highlight.Truncate(e.Message, msgW))
 
 		lines = append(lines, fmt.Sprintf("  %s  %s %s %s %s", ts, sev, host, prog, msg))
 	}
@@ -305,21 +303,21 @@ func (m *Model) renderRecentErrors() string {
 
 	// Iterate newest-last so the rendered panel reads oldest-on-top, newest at
 	// the bottom — matches every other log feed in the product. The producer
-	// (drainApplogErrors) prepends, so m.recentErrors is newest-first.
+	// (drainStreams) prepends, so m.recentErrors is newest-first.
 	for i := len(m.recentErrors) - 1; i >= 0; i-- {
 		e := m.recentErrors[i]
 		ts := theme.Timestamp.Render(e.Timestamp.Local().Format("15:04"))
-		lvl := theme.AppLogLevelStyle(e.Level).Render(padRight(e.Level, 6))
-		svc := theme.Program.Render(padRight(truncate(e.Service, 18), 18))
-		comp := lipgloss.NewStyle().Foreground(theme.ColorYellow).Render(padRight(truncate(e.Component, 14), 14))
+		lvl := theme.AppLogLevelStyle(e.Level).Render(highlight.PadRight(e.Level, 6))
+		svc := theme.Program.Render(highlight.PadRight(highlight.Truncate(e.Service, 18), 18))
+		comp := lipgloss.NewStyle().Foreground(theme.ColorYellow).Render(highlight.PadRight(highlight.Truncate(e.Component, 14), 14))
 
 		msgW := max(20, m.width-56)
-		msg := highlight.Message(truncate(e.Msg, msgW))
+		msg := highlight.Message(highlight.Truncate(e.Msg, msgW))
 
 		// Inline attrs like the web GUI.
-		if attrs := formatAttrsInline(e.Attrs); attrs != "" {
+		if attrs := highlight.AttrsInline(e.Attrs); attrs != "" {
 			msg += " " + lipgloss.NewStyle().Foreground(theme.ColorOrange).Render("-") +
-				" " + theme.Comment.Render(truncate(attrs, max(10, msgW/2)))
+				" " + theme.Comment.Render(highlight.Truncate(attrs, max(10, msgW/2)))
 		}
 
 		lines = append(lines, fmt.Sprintf("  %s  %s %s %s %s", ts, lvl, svc, comp, msg))
@@ -362,63 +360,28 @@ func (m *Model) renderApplogCards() string {
 // --- Live stream draining ---
 
 func (m Model) drainStreams() Model {
-	m.criticalLogs = drainSrvlogCritical(m.srvlogStream, m.criticalLogs)
-	m.recentErrors = drainApplogErrors(m.applogStream, m.recentErrors)
+	crit, _ := client.Drain[client.SrvlogEvent](m.srvlogStream, 50)
+	m.criticalLogs = prependCapped(crit, m.criticalLogs)
+	errs, _ := client.Drain[client.AppLogEvent](m.applogStream, 50)
+	m.recentErrors = prependCapped(errs, m.recentErrors)
 	return m
 }
 
-// drainSrvlogCritical reads up to 50 events from the srvlog stream and
-// prepends them to the critical logs list (newest first, capped).
-func drainSrvlogCritical(stream *client.SSEStream, current []client.SrvlogEvent) []client.SrvlogEvent {
-	if stream == nil {
+// prependCapped prepends a drained batch (arrival order, oldest first) to
+// current so the result stays newest-first, capped at maxRecentEvents.
+func prependCapped[T any](batch, current []T) []T {
+	if len(batch) == 0 {
 		return current
 	}
-	for range 50 {
-		select {
-		case evt, ok := <-stream.Events():
-			if !ok {
-				return current
-			}
-			var e client.SrvlogEvent
-			if err := json.Unmarshal(evt.Data, &e); err != nil {
-				continue
-			}
-			current = append([]client.SrvlogEvent{e}, current...)
-			if len(current) > maxRecentEvents {
-				current = current[:maxRecentEvents]
-			}
-		default:
-			return current
-		}
+	out := make([]T, 0, len(batch)+len(current))
+	for i := len(batch) - 1; i >= 0; i-- {
+		out = append(out, batch[i])
 	}
-	return current
-}
-
-// drainApplogErrors reads up to 50 events from the applog stream and
-// prepends them to the recent errors list (newest first, capped).
-func drainApplogErrors(stream *client.SSEStream, current []client.AppLogEvent) []client.AppLogEvent {
-	if stream == nil {
-		return current
+	out = append(out, current...)
+	if len(out) > maxRecentEvents {
+		out = out[:maxRecentEvents]
 	}
-	for range 50 {
-		select {
-		case evt, ok := <-stream.Events():
-			if !ok {
-				return current
-			}
-			var e client.AppLogEvent
-			if err := json.Unmarshal(evt.Data, &e); err != nil {
-				continue
-			}
-			current = append([]client.AppLogEvent{e}, current...)
-			if len(current) > maxRecentEvents {
-				current = current[:maxRecentEvents]
-			}
-		default:
-			return current
-		}
-	}
-	return current
+	return out
 }
 
 // --- Data loading ---
@@ -477,33 +440,6 @@ func (m *Model) RefreshTickCmd() tea.Cmd {
 
 var refreshKey = key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh"))
 
-// formatAttrsInline renders attrs as "key=val key=val" like the web GUI.
-func formatAttrsInline(raw json.RawMessage) string {
-	if len(raw) == 0 || string(raw) == "{}" || string(raw) == "null" {
-		return ""
-	}
-	var attrs map[string]any
-	if err := json.Unmarshal(raw, &attrs); err != nil {
-		return ""
-	}
-	keys := make([]string, 0, len(attrs))
-	for k := range attrs {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		switch val := attrs[k].(type) {
-		case string:
-			parts = append(parts, k+"="+val)
-		default:
-			b, _ := json.Marshal(val)
-			parts = append(parts, k+"="+string(b))
-		}
-	}
-	return strings.Join(parts, " ")
-}
-
 // --- Helpers ---
 
 func formatCount(n int64) string {
@@ -531,21 +467,4 @@ func pctStr(count, total int64) string {
 		return ""
 	}
 	return fmt.Sprintf("%.1f%% of total", float64(count)/float64(total)*100)
-}
-
-func padRight(s string, n int) string {
-	if len(s) >= n {
-		return s[:n]
-	}
-	return s + strings.Repeat(" ", n-len(s))
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
 }

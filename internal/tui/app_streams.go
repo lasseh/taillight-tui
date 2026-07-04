@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -59,7 +58,7 @@ func (a *App) sseTick() tea.Cmd {
 // Tracks JSON parse failures so the user is alerted via the status bar.
 func (a *App) drainAllStreams() {
 	if a.srvlogStream != nil {
-		events, parseErrs := drainSrvlogSSE(a.srvlogStream, 100)
+		events, parseErrs := client.Drain[client.SrvlogEvent](a.srvlogStream, 100)
 		a.parseErrors += parseErrs
 		if len(events) > 0 {
 			a.srvlog.PushEvents(events)
@@ -72,7 +71,7 @@ func (a *App) drainAllStreams() {
 	}
 
 	if a.applogStream != nil {
-		events, parseErrs := drainApplogSSE(a.applogStream, 100)
+		events, parseErrs := client.Drain[client.AppLogEvent](a.applogStream, 100)
 		a.parseErrors += parseErrs
 		if len(events) > 0 {
 			a.applog.PushEvents(events)
@@ -85,7 +84,7 @@ func (a *App) drainAllStreams() {
 	}
 
 	if a.netlogStream != nil {
-		events, parseErrs := drainNetlogSSE(a.netlogStream, 100)
+		events, parseErrs := client.Drain[client.SrvlogEvent](a.netlogStream, 100)
 		a.parseErrors += parseErrs
 		if len(events) > 0 {
 			a.netlog.PushEvents(events)
@@ -177,68 +176,4 @@ func (a *App) loadNetlogMeta() tea.Cmd {
 		}
 		return MetaLoadedMsg{Feed: "netlog", Hosts: hostList, Programs: progList}
 	}
-}
-
-// SSE drain helpers per event type. Returns the parsed events and the count
-// of unmarshal failures encountered (so callers can surface parse errors
-// instead of silently dropping them).
-
-func drainSrvlogSSE(stream *client.SSEStream, maxEvents int) (events []client.SrvlogEvent, parseErrors int) {
-	for range maxEvents {
-		select {
-		case evt, ok := <-stream.Events():
-			if !ok {
-				return events, parseErrors
-			}
-			var e client.SrvlogEvent
-			if err := json.Unmarshal(evt.Data, &e); err != nil {
-				parseErrors++
-				continue
-			}
-			events = append(events, e)
-		default:
-			return events, parseErrors
-		}
-	}
-	return events, parseErrors
-}
-
-func drainApplogSSE(stream *client.SSEStream, maxEvents int) (events []client.AppLogEvent, parseErrors int) {
-	for range maxEvents {
-		select {
-		case evt, ok := <-stream.Events():
-			if !ok {
-				return events, parseErrors
-			}
-			var e client.AppLogEvent
-			if err := json.Unmarshal(evt.Data, &e); err != nil {
-				parseErrors++
-				continue
-			}
-			events = append(events, e)
-		default:
-			return events, parseErrors
-		}
-	}
-	return events, parseErrors
-}
-
-func drainNetlogSSE(stream *client.SSEStream, maxEvents int) (events []client.SrvlogEvent, parseErrors int) {
-	for range maxEvents {
-		select {
-		case evt, ok := <-stream.Events():
-			if !ok {
-				return events, parseErrors
-			}
-			var e client.SrvlogEvent
-			if err := json.Unmarshal(evt.Data, &e); err != nil {
-				parseErrors++
-				continue
-			}
-			events = append(events, e)
-		default:
-			return events, parseErrors
-		}
-	}
-	return events, parseErrors
 }
