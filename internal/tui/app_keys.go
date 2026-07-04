@@ -6,7 +6,6 @@ import (
 
 	"github.com/lasseh/taillight-tui/internal/tui/component"
 	"github.com/lasseh/taillight-tui/internal/tui/view/applog"
-	"github.com/lasseh/taillight-tui/internal/tui/view/netlog"
 	"github.com/lasseh/taillight-tui/internal/tui/view/srvlog"
 )
 
@@ -149,7 +148,7 @@ func (a *App) activeFilterFields() []component.Field {
 			return f.PopupFields()
 		}
 	case TabNetlog:
-		if f := netlog.Filter(&a.netlog); f != nil {
+		if f := srvlog.Filter(&a.netlog); f != nil {
 			return f.PopupFields()
 		}
 	case TabApplog:
@@ -173,7 +172,7 @@ func (a *App) applyPopupFilter(values map[string]string) tea.Cmd {
 		}
 		return a.restartStream(TabSrvlog)
 	case TabNetlog:
-		if f := netlog.Filter(&a.netlog); f != nil {
+		if f := srvlog.Filter(&a.netlog); f != nil {
 			f.ApplyPopupValues(values)
 		}
 		return a.restartStream(TabNetlog)

@@ -1,5 +1,9 @@
 // Package srvlog wraps the generic logview package with srvlog-specific
 // columns, row rendering, detail panel, and filter.
+//
+// The netlog tab reuses this view as-is: netlog events share the srvlog
+// schema (client.NetlogEvent is an alias of client.SrvlogEvent), so only the
+// SSE endpoint and stream label differ — both managed by the parent app.
 package srvlog
 
 import (

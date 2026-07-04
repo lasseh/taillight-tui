@@ -12,7 +12,8 @@
 //   - msg.go         — message types
 //   - theme/         — Tokyo Night colors and lipgloss styles
 //   - client/        — HTTP/SSE client for the Taillight API
-//   - view/          — per-tab views (srvlog, applog, netlog, dashboard, ...)
+//   - view/          — per-tab views (srvlog, applog, dashboard, ...); the
+//     netlog tab reuses the srvlog view since both feeds share the schema
 //   - component/     — shared components (statusbar, tabbar, toast)
 //   - buffer/        — generic ring buffer for event storage
 package tui
@@ -31,7 +32,6 @@ import (
 	"github.com/lasseh/taillight-tui/internal/tui/theme"
 	"github.com/lasseh/taillight-tui/internal/tui/view/applog"
 	"github.com/lasseh/taillight-tui/internal/tui/view/dashboard"
-	"github.com/lasseh/taillight-tui/internal/tui/view/netlog"
 	"github.com/lasseh/taillight-tui/internal/tui/view/srvlog"
 )
 
@@ -66,10 +66,11 @@ type App struct {
 	activeTab TabID
 	focus     FocusTarget
 
-	// Sub-models.
+	// Sub-models. The netlog tab reuses the srvlog view: netlog events share
+	// the srvlog schema, so both instantiate the same generic logview.
 	srvlog    srvlog.Model
 	applog    applog.Model
-	netlog    netlog.Model
+	netlog    srvlog.Model
 	dashboard dashboard.Model
 	tabBar    component.TabBar
 	statusBar component.StatusBar
@@ -129,7 +130,7 @@ func NewApp(cfg Config, c *client.Client) *App {
 		focus:        FocusTable,
 		srvlog:       srvlog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
 		applog:       applog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
-		netlog:       netlog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
+		netlog:       srvlog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
 		dashboard:    dashboard.New(c),
 		toasts:       component.NewToastQueue(),
 		streamParams: make(map[TabID]string),
@@ -206,7 +207,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "applog":
 			applog.SetMeta(&a.applog, msg.Services, msg.Components, msg.Hosts)
 		case "netlog":
-			netlog.SetMeta(&a.netlog, msg.Hosts, msg.Programs)
+			srvlog.SetMeta(&a.netlog, msg.Hosts, msg.Programs)
 		}
 		return a, nil
 
