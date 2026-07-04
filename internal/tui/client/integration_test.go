@@ -125,19 +125,3 @@ func TestSSEStream(t *testing.T) {
 		t.Fatal("No SSE event received within 10s")
 	}
 }
-
-func TestHosts(t *testing.T) {
-	c := testClient(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	hosts, err := c.Hosts(ctx, "24h")
-	if err != nil {
-		t.Fatalf("Hosts: %v", err)
-	}
-	t.Logf("Got %d hosts", len(hosts))
-	if len(hosts) > 0 {
-		h := hosts[0]
-		t.Logf("First host: %s feed=%s total=%d errors=%d", h.Hostname, h.Feed, h.TotalCount, h.ErrorCount)
-	}
-}

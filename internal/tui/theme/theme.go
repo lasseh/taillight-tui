@@ -75,46 +75,8 @@ func SeverityBar(severity int) string {
 	return lipgloss.NewStyle().Foreground(SeverityColor(severity)).Render("▎")
 }
 
-// TabAccentColors maps tab feeds to their accent colors.
-var TabAccentColors = map[string]color.Color{
-	"srvlog":    ColorTeal,
-	"applog":    ColorPink,
-	"netlog":    ColorFuchsia,
-	"dashboard": ColorBlue,
-	"hosts":     ColorGreen,
-	"alerts":    ColorYellow,
-	"settings":  ColorComment,
-}
-
 // Pre-built styles.
 var (
-	Base = lipgloss.NewStyle().
-		Foreground(ColorFG)
-
-	TabBarBG = lipgloss.NewStyle().
-			Background(ColorBGDark)
-
-	ActiveTab = lipgloss.NewStyle().
-			Background(ColorBGHighlight).
-			Bold(true).
-			Padding(0, 1)
-
-	InactiveTab = lipgloss.NewStyle().
-			Foreground(ColorComment).
-			Background(ColorBGDark).
-			Padding(0, 1)
-
-	StatusBar = lipgloss.NewStyle().
-			Foreground(ColorFGDark).
-			Background(ColorBGDark).
-			Padding(0, 1)
-
-	StatusConnected = lipgloss.NewStyle().
-			Foreground(ColorGreen)
-
-	StatusDisconnected = lipgloss.NewStyle().
-				Foreground(ColorRed)
-
 	TableHeader = lipgloss.NewStyle().
 			Foreground(ColorComment).
 			Background(ColorBG).
@@ -132,13 +94,6 @@ var (
 			Background(ColorBGDark).
 			Border(lipgloss.NormalBorder(), false, false, true, false).
 			BorderForeground(ColorBorder)
-
-	FilterLabel = lipgloss.NewStyle().
-			Foreground(ColorComment)
-
-	FilterInput = lipgloss.NewStyle().
-			Foreground(ColorFG).
-			Background(ColorBGDark)
 
 	DetailKey = lipgloss.NewStyle().
 			Foreground(ColorTeal).
@@ -160,13 +115,6 @@ var (
 	CardLabel = lipgloss.NewStyle().
 			Foreground(ColorComment).
 			Bold(true)
-
-	CardValue = lipgloss.NewStyle().
-			Bold(true)
-
-	Border = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorBorder)
 
 	Hostname = lipgloss.NewStyle().
 			Foreground(ColorTeal)
@@ -210,10 +158,4 @@ func SeverityStyle(severity int) lipgloss.Style {
 // AppLogLevelStyle returns a style with the foreground set to the level color.
 func AppLogLevelStyle(level string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(AppLogLevelColor(level))
-}
-
-// IsCriticalSeverity returns true for severity levels that should get
-// tinted row backgrounds (emerg, alert, crit).
-func IsCriticalSeverity(severity int) bool {
-	return severity <= 2
 }

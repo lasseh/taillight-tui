@@ -56,18 +56,6 @@ type ItemResponse[T any] struct {
 	Data T `json:"data"`
 }
 
-// SrvlogDeviceSummary represents a device-level summary.
-type SrvlogDeviceSummary struct {
-	Hostname          string          `json:"hostname"`
-	FromhostIP        string          `json:"fromhost_ip"`
-	LastSeenAt        *time.Time      `json:"last_seen_at"`
-	TotalCount        int64           `json:"total_count"`
-	CriticalCount     int64           `json:"critical_count"`
-	SeverityBreakdown []SeverityCount `json:"severity_breakdown"`
-	TopMessages       []TopMessage    `json:"top_messages"`
-	CriticalLogs      []SrvlogEvent   `json:"critical_logs"`
-}
-
 // SeverityCount is a severity bucket in a breakdown.
 type SeverityCount struct {
 	Severity int     `json:"severity"`
@@ -76,22 +64,11 @@ type SeverityCount struct {
 	Pct      float64 `json:"pct"`
 }
 
-// TopMessage is a frequently recurring message pattern.
-type TopMessage struct {
-	Pattern       string    `json:"pattern"`
-	Sample        string    `json:"sample"`
-	Count         int64     `json:"count"`
-	LatestID      int64     `json:"latest_id"`
-	LatestAt      time.Time `json:"latest_at"`
-	Severity      int       `json:"severity"`
-	SeverityLabel string    `json:"severity_label"`
-}
-
-// VolumeBucket is a time-bucketed event count.
-type VolumeBucket struct {
-	Time   time.Time        `json:"time"`
-	Total  int64            `json:"total"`
-	ByHost map[string]int64 `json:"by_host"`
+// LevelCount is a level bucket in a breakdown.
+type LevelCount struct {
+	Level string  `json:"level"`
+	Count int64   `json:"count"`
+	Pct   float64 `json:"pct"`
 }
 
 // StatsSummary is the aggregated summary response for srvlog/netlog.
@@ -119,16 +96,4 @@ type HostCount struct {
 	Name  string  `json:"name"`
 	Count int64   `json:"count"`
 	Pct   float64 `json:"pct"`
-}
-
-// HostEntry represents a host in the hosts inventory.
-type HostEntry struct {
-	Hostname   string     `json:"hostname"`
-	FromhostIP string     `json:"fromhost_ip"`
-	Feed       string     `json:"feed"`
-	TotalCount int64      `json:"total_count"`
-	ErrorCount int64      `json:"error_count"`
-	ErrorRatio float64    `json:"error_ratio"`
-	Trend      float64    `json:"trend"`
-	LastSeenAt *time.Time `json:"last_seen_at"`
 }

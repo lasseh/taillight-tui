@@ -60,11 +60,6 @@ func (s *SSEStream) Connected() bool {
 	return s.connected.Load()
 }
 
-// AuthFailed reports whether the stream gave up due to a 401/403 response.
-func (s *SSEStream) AuthFailed() bool {
-	return s.authFailed.Load()
-}
-
 // LastID returns the ID of the most recently delivered event.
 func (s *SSEStream) LastID() int64 {
 	return s.lastID.Load()

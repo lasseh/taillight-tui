@@ -3,30 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
-	"net/url"
-	"strconv"
 )
-
-// NetlogFilter holds query parameters for netlog list/stream requests.
-// Identical to SrvlogFilter since netlogs use the same schema.
-type NetlogFilter = SrvlogFilter
-
-// ListNetlogs fetches a paginated list of netlog events.
-func (c *Client) ListNetlogs(ctx context.Context, filter NetlogFilter, cursor string, limit int) (*ListResponse[NetlogEvent], error) {
-	params := filter.Params()
-	if cursor != "" {
-		params.Set("cursor", cursor)
-	}
-	if limit > 0 {
-		params.Set("limit", strconv.Itoa(limit))
-	}
-
-	var resp ListResponse[NetlogEvent]
-	if err := c.getWithParams(ctx, "/api/v1/netlog/", params, &resp); err != nil {
-		return nil, fmt.Errorf("list netlogs: %w", err)
-	}
-	return &resp, nil
-}
 
 // NetlogHosts fetches the list of known netlog hostnames.
 func (c *Client) NetlogHosts(ctx context.Context) ([]string, error) {
@@ -44,17 +21,4 @@ func (c *Client) NetlogPrograms(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("netlog programs: %w", err)
 	}
 	return resp.Data, nil
-}
-
-// NetlogSummary fetches aggregated netlog statistics.
-func (c *Client) NetlogSummary(ctx context.Context, rangeDur string) (*StatsSummary, error) {
-	params := url.Values{}
-	if rangeDur != "" {
-		params.Set("range", rangeDur)
-	}
-	var resp ItemResponse[StatsSummary]
-	if err := c.getWithParams(ctx, "/api/v1/netlog/stats/summary", params, &resp); err != nil {
-		return nil, fmt.Errorf("netlog summary: %w", err)
-	}
-	return &resp.Data, nil
 }

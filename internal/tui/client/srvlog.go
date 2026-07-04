@@ -84,12 +84,3 @@ func (c *Client) SrvlogSummary(ctx context.Context, rangeDur string) (*StatsSumm
 	}
 	return &resp.Data, nil
 }
-
-// SrvlogDevice fetches a device-level summary for a hostname.
-func (c *Client) SrvlogDevice(ctx context.Context, hostname string) (*SrvlogDeviceSummary, error) {
-	var resp ItemResponse[SrvlogDeviceSummary]
-	if err := c.get(ctx, "/api/v1/srvlog/device/"+url.PathEscape(hostname), &resp); err != nil {
-		return nil, fmt.Errorf("srvlog device %s: %w", hostname, err)
-	}
-	return &resp.Data, nil
-}

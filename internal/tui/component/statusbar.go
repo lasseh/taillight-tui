@@ -12,7 +12,6 @@ import (
 // StatusBar renders a multi-segment status bar pinned to the terminal bottom.
 type StatusBar struct {
 	connected   bool
-	newEvents   int // events arrived while scrolled up
 	parseErrors int // cumulative SSE JSON parse failures
 	errMsg      string
 	filters     []string // active filter pills
@@ -26,11 +25,6 @@ func NewStatusBar() StatusBar {
 // SetConnected updates the connection state.
 func (s *StatusBar) SetConnected(v bool) {
 	s.connected = v
-}
-
-// SetNewEvents sets the count of events arrived while user is scrolled up.
-func (s *StatusBar) SetNewEvents(n int) {
-	s.newEvents = n
 }
 
 // SetParseErrors sets the cumulative SSE JSON parse failure count.
@@ -99,12 +93,6 @@ func (s *StatusBar) View(width int) string {
 	// Error segment.
 	if s.errMsg != "" {
 		segments = append(segments, segErr.Render(s.errMsg))
-	}
-
-	// New events indicator (when scrolled up).
-	if s.newEvents > 0 {
-		segments = append(segments, segNew.Render(
-			fmt.Sprintf("▼ %d new", s.newEvents)))
 	}
 
 	// Parse error counter (visible when non-zero so production issues
