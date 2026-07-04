@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/rand/v2"
 	"net/http"
@@ -19,7 +20,7 @@ import (
 // SSEEvent is a parsed Server-Sent Event.
 type SSEEvent struct {
 	ID    int64
-	Event string          // "srvlog", "applog", "netlog", "heartbeat"
+	Event string          // "srvlog", "applog", "netlog" — heartbeats are never delivered
 	Data  json.RawMessage // raw JSON payload
 }
 
@@ -64,7 +65,7 @@ func (s *SSEStream) AuthFailed() bool {
 	return s.authFailed.Load()
 }
 
-// LastID returns the ID of the most recently received event.
+// LastID returns the ID of the most recently delivered event.
 func (s *SSEStream) LastID() int64 {
 	return s.lastID.Load()
 }
@@ -165,7 +166,13 @@ func (s *SSEStream) connect(ctx context.Context, httpClient *http.Client, c *Cli
 
 	s.connected.Store(true)
 
-	scanner := bufio.NewScanner(resp.Body)
+	return s.readEvents(ctx, resp.Body)
+}
+
+// readEvents scans SSE lines from r, assembles events, and delivers them on
+// s.eventCh until r is exhausted or ctx is done.
+func (s *SSEStream) readEvents(ctx context.Context, r io.Reader) error {
+	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 
 	var (
@@ -183,22 +190,28 @@ func (s *SSEStream) connect(ctx context.Context, httpClient *http.Client, c *Cli
 
 		line := scanner.Text()
 
-		switch {
-		case line == "":
+		if line == "" {
 			// Empty line = event dispatch.
-			if dataBuffer.Len() > 0 {
+			if dataBuffer.Len() > 0 && eventType != "heartbeat" {
 				evt := SSEEvent{
 					ID:    eventID,
 					Event: eventType,
 					Data:  json.RawMessage(dataBuffer.String()),
 				}
-				if eventType != "heartbeat" {
-					select {
-					case s.eventCh <- evt:
-					default:
-						// Channel full — drop event to avoid blocking.
-					}
+				// Blocking send: Last-Event-ID resume is only honest if
+				// lastID means "delivered to the consumer", so events must
+				// not be dropped here. The UI drains the channel in batches
+				// every tick, so a full channel is transient backpressure on
+				// this read loop; if the consumer stalls entirely, the
+				// server's SSE write deadline drops the connection and
+				// reconnect+backfill resumes from the last delivered event.
+				select {
+				case s.eventCh <- evt:
+				case <-ctx.Done():
+					return ctx.Err()
 				}
+				// Advance only after a successful send — an undelivered
+				// event must be replayed by the next reconnect's backfill.
 				if eventID > 0 {
 					s.lastID.Store(eventID)
 				}
@@ -207,25 +220,41 @@ func (s *SSEStream) connect(ctx context.Context, httpClient *http.Client, c *Cli
 			eventID = 0
 			eventType = ""
 			dataBuffer.Reset()
+			continue
+		}
 
-		case strings.HasPrefix(line, "id: "):
-			eventID, _ = strconv.ParseInt(strings.TrimPrefix(line, "id: "), 10, 64)
-
-		case strings.HasPrefix(line, "event: "):
-			eventType = strings.TrimPrefix(line, "event: ")
-
-		case strings.HasPrefix(line, "data: "):
+		field, value, ok := splitSSEField(line)
+		if !ok {
+			continue // comment line or line without a colon — ignore
+		}
+		switch field {
+		case "id":
+			eventID, _ = strconv.ParseInt(value, 10, 64)
+		case "event":
+			eventType = value
+		case "data":
 			if dataBuffer.Len() > 0 {
 				dataBuffer.WriteByte('\n')
 			}
-			dataBuffer.WriteString(strings.TrimPrefix(line, "data: "))
-
+			dataBuffer.WriteString(value)
 		default:
-			// SSE comment or unknown field — ignore.
+			// Unknown field (e.g. "retry") — ignore.
 		}
 	}
 
 	return scanner.Err()
+}
+
+// splitSSEField splits an SSE line into field name and value. Per the SSE
+// spec the first colon ends the field name and a single space after it is
+// stripped from the value, so "id: 5" and "id:5" are equivalent. Comment
+// lines (leading colon) and lines without a colon report ok = false.
+func splitSSEField(line string) (field, value string, ok bool) {
+	idx := strings.IndexByte(line, ':')
+	if idx <= 0 {
+		return "", "", false
+	}
+	return line[:idx], strings.TrimPrefix(line[idx+1:], " "), true
 }
 
 // backoff returns a delay with exponential backoff and jitter.
