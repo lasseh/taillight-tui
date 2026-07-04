@@ -3,6 +3,7 @@ package tui
 import (
 	"net/url"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -60,6 +61,69 @@ func TestSearchEnterAppliesToStream(t *testing.T) {
 	}
 	if got := a.srvlog.EventCount(); got != 0 {
 		t.Errorf("EventCount after filter change = %d, want 0 (stale events must clear)", got)
+	}
+}
+
+// TestStreamStartedMsgClosesReplacedStream guards against leaking SSE
+// streams: when a StreamStartedMsg arrives for a feed that already has a
+// live stream (double-start race during the in-flight window), the old
+// stream must be closed before the new one is stored — otherwise its
+// reconnect goroutine and connection leak for the life of the process.
+func TestStreamStartedMsgClosesReplacedStream(t *testing.T) {
+	tests := []struct {
+		name string
+		feed string
+		get  func(a *App) *client.SSEStream
+		set  func(a *App, s *client.SSEStream)
+	}{
+		{
+			name: "srvlog",
+			feed: "srvlog",
+			get:  func(a *App) *client.SSEStream { return a.srvlogStream },
+			set:  func(a *App, s *client.SSEStream) { a.srvlogStream = s },
+		},
+		{
+			name: "applog",
+			feed: "applog",
+			get:  func(a *App) *client.SSEStream { return a.applogStream },
+			set:  func(a *App, s *client.SSEStream) { a.applogStream = s },
+		},
+		{
+			name: "netlog",
+			feed: "netlog",
+			get:  func(a *App) *client.SSEStream { return a.netlogStream },
+			set:  func(a *App, s *client.SSEStream) { a.netlogStream = s },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := NewApp(DefaultConfig(), nil)
+			c := client.New(client.Config{BaseURL: "http://127.0.0.1:0"})
+
+			oldStream := client.NewSSEStream(c, "/api/v1/"+tt.feed+"/stream", url.Values{}, 0)
+			tt.set(a, oldStream)
+
+			newStream := client.NewSSEStream(c, "/api/v1/"+tt.feed+"/stream", url.Values{}, 0)
+			defer newStream.Close()
+
+			a.Update(StreamStartedMsg{Feed: tt.feed, Stream: newStream})
+
+			if got := tt.get(a); got != newStream {
+				t.Error("StreamStartedMsg must store the new stream")
+			}
+			// Close cancels the old stream's context; its run goroutine
+			// closes the event channel on exit. A drained-and-closed channel
+			// proves the replaced stream was shut down, not leaked.
+			select {
+			case _, ok := <-oldStream.Events():
+				if ok {
+					t.Error("replaced stream delivered an event; expected closed channel")
+				}
+			case <-time.After(2 * time.Second):
+				t.Error("replaced stream not closed: event channel still open after 2s")
+			}
+		})
 	}
 }
 

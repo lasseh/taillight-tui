@@ -315,6 +315,10 @@ func sessionMiddleware(srvURL, key string, fpsRate int, tlsSkip bool, logger *sl
 				for {
 					select {
 					case <-ctx.Done():
+						// Session context cancelled (abrupt disconnect,
+						// server shutdown) — tell the program to quit so
+						// Run returns and the deferred Cleanup runs.
+						program.Quit()
 						return
 					case w := <-windowChanges:
 						program.Send(tea.WindowSizeMsg{Width: w.Width, Height: w.Height})
@@ -328,6 +332,10 @@ func sessionMiddleware(srvURL, key string, fpsRate int, tlsSkip bool, logger *sl
 					"user", s.User(),
 					"remote_addr", s.RemoteAddr().String())
 			}
+			// Force-kill the program if it's still running and restore the
+			// terminal in case of a TUI crash — mirrors upstream wish's
+			// bubbletea middleware teardown.
+			program.Kill()
 
 			logger.Info("session ended",
 				"user", s.User(),

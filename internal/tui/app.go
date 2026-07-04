@@ -166,12 +166,27 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case StreamStartedMsg:
+		// Close any stream already running for the feed before storing the
+		// new one. Between dispatching a start Cmd and this message arriving
+		// the stream field is nil, so a second start can be triggered in that
+		// window (rapid tab bouncing, double filter apply); overwriting the
+		// pointer without Close would leak the old stream's reconnect
+		// goroutine and connection for the life of the process.
 		switch msg.Feed {
 		case "srvlog":
+			if a.srvlogStream != nil {
+				a.srvlogStream.Close()
+			}
 			a.srvlogStream = msg.Stream
 		case "applog":
+			if a.applogStream != nil {
+				a.applogStream.Close()
+			}
 			a.applogStream = msg.Stream
 		case "netlog":
+			if a.netlogStream != nil {
+				a.netlogStream.Close()
+			}
 			a.netlogStream = msg.Stream
 		}
 		return a, nil
