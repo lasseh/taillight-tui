@@ -20,11 +20,13 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/lasseh/taillight-tui/internal/tui/buffer"
+	"github.com/lasseh/taillight-tui/internal/tui/component"
 	"github.com/lasseh/taillight-tui/internal/tui/theme"
 )
 
@@ -56,35 +58,27 @@ type Adapter[T any] struct {
 	ID func(e T) int64
 }
 
-// Filter is the contract a per-feed filter must satisfy. Each feed's filter
-// owns its own metadata fields (hostnames, programs, services, etc.) but
-// exposes the same lifecycle to the generic Model.
+// Filter is the feed-specific part of a log view's server-side filter. The
+// Model owns the shared search input; a Filter owns the feed's extra fields
+// (hostname, service, severity, ...), keyed by their SSE query param name.
 type Filter interface {
-	// Update processes a key/text-input message. Returns the updated
-	// filter and any command from the underlying input.
-	Update(msg tea.Msg) (Filter, tea.Cmd)
+	// Fields returns the feed's popup fields with current values and
+	// typeahead suggestions, in display order. Field.Key is the query param.
+	Fields() []component.Field
 
-	// Focus activates the filter input (returns a focus command).
-	Focus() tea.Cmd
+	// Apply commits popup values keyed by Field.Key. An empty value clears
+	// the field; a missing key leaves it unchanged.
+	Apply(values map[string]string)
 
-	// Blur deactivates the filter input.
-	Blur()
-
-	// Dirty reports whether the filter changed since the last AckDirty.
-	Dirty() bool
-
-	// AckDirty clears the dirty flag (called after the model rebuilds).
-	AckDirty()
-
-	// HasActiveFilter reports whether any filter narrows the result set
-	// (used to choose between "Waiting for events" and "No events match").
-	HasActiveFilter() bool
-
-	// View renders the filter bar at the given width.
-	View(width int) string
-
-	// Params returns the filter as URL query parameters for the SSE stream.
+	// Params returns the feed's fields as SSE query params.
 	Params() url.Values
+
+	// Pills renders compact status bar labels for the feed's fields present
+	// in params, in display order.
+	Pills(params url.Values) []string
+
+	// SetMeta sets typeahead suggestions, keyed by Field.Key.
+	SetMeta(meta map[string][]string)
 }
 
 // Model is a generic streaming log view: filter bar + table + optional
@@ -93,6 +87,7 @@ type Model[T any] struct {
 	buf        *buffer.Ring[T]
 	events     []T // filtered view of the buffer
 	table      table.Model
+	search     textinput.Model
 	filter     Filter
 	detail     *viewport.Model
 	detailEvt  *T
@@ -117,9 +112,15 @@ func New[T any](bufferSize int, timeFormat string, autoScroll bool, adapter Adap
 	s.Cell = theme.TableCell
 	t.SetStyles(s)
 
+	search := textinput.New()
+	search.Placeholder = "search..."
+	search.SetWidth(30)
+	search.Prompt = "/ "
+
 	return Model[T]{
 		buf:        buffer.New[T](bufferSize),
 		table:      t,
+		search:     search,
 		filter:     filter,
 		timeFormat: timeFormat,
 		autoScroll: autoScroll,
@@ -148,9 +149,60 @@ func (m *Model[T]) SetSize(width, height int) {
 	m.table.SetHeight(max(3, tableHeight))
 }
 
-// Filter returns the filter for SSE stream parameter inspection.
-func (m *Model[T]) Filter() Filter {
-	return m.filter
+// searchKey is the query param and popup field key for the search input.
+const searchKey = "search"
+
+// Params returns the view's filter as SSE stream query params: the feed's
+// fields plus the search input.
+func (m *Model[T]) Params() url.Values {
+	v := m.filter.Params()
+	if s := m.search.Value(); s != "" {
+		v.Set(searchKey, s)
+	}
+	return v
+}
+
+// PopupFields returns the filter popup fields: the feed's fields followed by
+// the search input.
+func (m *Model[T]) PopupFields() []component.Field {
+	return append(m.filter.Fields(), component.Field{
+		Key:   searchKey,
+		Label: "Search",
+		Kind:  component.FieldText,
+		Value: m.search.Value(),
+	})
+}
+
+// ApplyPopupValues commits values emitted by the filter popup.
+func (m *Model[T]) ApplyPopupValues(values map[string]string) {
+	if s, ok := values[searchKey]; ok {
+		m.search.SetValue(s)
+	}
+	m.filter.Apply(values)
+}
+
+// SetMeta sets the filter's typeahead suggestions, keyed by field key.
+func (m *Model[T]) SetMeta(meta map[string][]string) {
+	m.filter.SetMeta(meta)
+}
+
+// Pills renders status bar labels for encoded stream params: the feed's
+// fields first, then the search.
+func (m *Model[T]) Pills(encoded string) []string {
+	vals, err := url.ParseQuery(encoded)
+	if err != nil || len(vals) == 0 {
+		return nil
+	}
+	pills := m.filter.Pills(vals)
+	if s := vals.Get(searchKey); s != "" {
+		pills = append(pills, "/"+s)
+	}
+	return pills
+}
+
+// hasActiveFilter reports whether any filter narrows the result set.
+func (m *Model[T]) hasActiveFilter() bool {
+	return m.search.Value() != "" || len(m.filter.Params()) > 0
 }
 
 // PushEvents adds a batch of events to the buffer and updates the table.
@@ -183,12 +235,12 @@ func (m *Model[T]) ClearEvents() {
 // the Update return value — otherwise the cursor won't blink and the
 // input may not respond properly.
 func (m *Model[T]) FocusFilter() tea.Cmd {
-	return m.filter.Focus()
+	return m.search.Focus()
 }
 
 // BlurFilter deactivates the filter input.
 func (m *Model[T]) BlurFilter() {
-	m.filter.Blur()
+	m.search.Blur()
 }
 
 // DetailOpen reports whether the detail sidebar is showing.
@@ -206,11 +258,7 @@ func (m *Model[T]) CloseDetail() {
 // UpdateFilter handles input when the filter bar is focused.
 func (m Model[T]) UpdateFilter(msg tea.Msg) (Model[T], tea.Cmd) {
 	var cmd tea.Cmd
-	m.filter, cmd = m.filter.Update(msg)
-	if m.filter.Dirty() {
-		m.rebuildTable()
-		m.filter.AckDirty()
-	}
+	m.search, cmd = m.search.Update(msg)
 	return m, cmd
 }
 
@@ -250,13 +298,13 @@ func (m Model[T]) UpdateTable(msg tea.Msg) (Model[T], tea.Cmd) {
 
 // View renders the log view with optional detail sidebar.
 func (m *Model[T]) View() string {
-	filterBar := m.filter.View(m.width)
+	filterBar := theme.FilterBar.Width(m.width).Render(m.search.View())
 	tableView := m.table.View()
 
 	// Empty state — distinguish "no data yet" from "filter excluded everything".
 	if len(m.events) == 0 {
 		var msg string
-		if m.filter.HasActiveFilter() {
+		if m.hasActiveFilter() {
 			msg = "No events match the current filter"
 		} else {
 			msg = "Waiting for events..."

@@ -8,6 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lasseh/taillight-tui/internal/tui/client"
+	"github.com/lasseh/taillight-tui/internal/tui/view/applog"
+	"github.com/lasseh/taillight-tui/internal/tui/view/srvlog"
 )
 
 // metaLoadTimeout is the budget for fetching meta (hosts/programs/services).
@@ -21,21 +23,21 @@ func (a *App) startStream(tab TabID) tea.Cmd {
 	c := a.client
 	switch tab {
 	case TabSrvlog:
-		params := a.srvlog.Filter().Params()
+		params := a.srvlog.Params()
 		a.streamParams[tab] = params.Encode()
 		return func() tea.Msg {
 			stream := client.NewSSEStream(c, "/api/v1/srvlog/stream", params, 0)
 			return StreamStartedMsg{Feed: "srvlog", Stream: stream}
 		}
 	case TabApplog:
-		params := a.applog.Filter().Params()
+		params := a.applog.Params()
 		a.streamParams[tab] = params.Encode()
 		return func() tea.Msg {
 			stream := client.NewSSEStream(c, "/api/v1/applog/stream", params, 0)
 			return StreamStartedMsg{Feed: "applog", Stream: stream}
 		}
 	case TabNetlog:
-		params := a.netlog.Filter().Params()
+		params := a.netlog.Params()
 		a.streamParams[tab] = params.Encode()
 		return func() tea.Msg {
 			stream := client.NewSSEStream(c, "/api/v1/netlog/stream", params, 0)
@@ -136,7 +138,7 @@ func (a *App) loadSrvlogMeta() tea.Cmd {
 		if err != nil {
 			return ErrorMsg{Err: fmt.Errorf("srvlog programs: %w", err)}
 		}
-		return MetaLoadedMsg{Feed: "srvlog", Hosts: hostList, Programs: progList}
+		return MetaLoadedMsg{Feed: "srvlog", Meta: srvlog.Meta(hostList, progList)}
 	}
 }
 
@@ -157,7 +159,7 @@ func (a *App) loadApplogMeta() tea.Cmd {
 		if err != nil {
 			return ErrorMsg{Err: fmt.Errorf("applog hosts: %w", err)}
 		}
-		return MetaLoadedMsg{Feed: "applog", Services: svcList, Components: compList, Hosts: hostList}
+		return MetaLoadedMsg{Feed: "applog", Meta: applog.Meta(svcList, compList, hostList)}
 	}
 }
 
@@ -174,6 +176,6 @@ func (a *App) loadNetlogMeta() tea.Cmd {
 		if err != nil {
 			return ErrorMsg{Err: fmt.Errorf("netlog programs: %w", err)}
 		}
-		return MetaLoadedMsg{Feed: "netlog", Hosts: hostList, Programs: progList}
+		return MetaLoadedMsg{Feed: "netlog", Meta: srvlog.Meta(hostList, progList)}
 	}
 }

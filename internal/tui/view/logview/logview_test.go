@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/lasseh/taillight-tui/internal/tui/component"
 	"github.com/lasseh/taillight-tui/internal/tui/view/logview"
 )
 
@@ -16,26 +17,16 @@ type fakeEvent struct {
 	Message string
 }
 
-// fakeFilter implements logview.Filter using only the embedded SearchFilter.
-type fakeFilter struct {
-	search logview.SearchFilter
-}
+// fakeFilter is a logview.Filter with no feed-specific fields.
+type fakeFilter struct{}
 
-func newFakeFilter() *fakeFilter {
-	return &fakeFilter{search: logview.NewSearchFilter()}
-}
+func newFakeFilter() *fakeFilter { return &fakeFilter{} }
 
-func (f *fakeFilter) Update(msg tea.Msg) (logview.Filter, tea.Cmd) {
-	cmd := f.search.UpdateInput(msg)
-	return f, cmd
-}
-func (f *fakeFilter) Focus() tea.Cmd        { return f.search.Focus() }
-func (f *fakeFilter) Blur()                 { f.search.Blur() }
-func (f *fakeFilter) Dirty() bool           { return f.search.Dirty() }
-func (f *fakeFilter) AckDirty()             { f.search.AckDirty() }
-func (f *fakeFilter) HasActiveFilter() bool { return f.search.Search() != "" }
-func (f *fakeFilter) View(_ int) string     { return f.search.Input.View() }
-func (f *fakeFilter) Params() url.Values    { return url.Values{} }
+func (f *fakeFilter) Fields() []component.Field   { return nil }
+func (f *fakeFilter) Apply(map[string]string)     {}
+func (f *fakeFilter) Params() url.Values          { return url.Values{} }
+func (f *fakeFilter) Pills(url.Values) []string   { return nil }
+func (f *fakeFilter) SetMeta(map[string][]string) {}
 
 var fakeAdapter = logview.Adapter[fakeEvent]{
 	Columns: func(_ int) []table.Column {

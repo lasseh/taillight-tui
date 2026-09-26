@@ -20,24 +20,6 @@ func New(bufferSize int, timeFormat string, autoScroll bool) Model {
 	return logview.New(bufferSize, timeFormat, autoScroll, adapter, filter)
 }
 
-// SetMeta updates the filter's metadata from the API response. The app calls
-// this when MetaLoadedMsg arrives. Type assertion is safe because we always
-// construct the model with a *FilterModel.
-func SetMeta(m *Model, hosts, programs []string) {
-	if f, ok := m.Filter().(*FilterModel); ok {
-		f.SetMeta(hosts, programs)
-	}
-}
-
-// Filter returns the srvlog FilterModel from a Model for popup access. The
-// cast is safe because we always construct models with *FilterModel.
-func Filter(m *Model) *FilterModel {
-	if f, ok := m.Filter().(*FilterModel); ok {
-		return f
-	}
-	return nil
-}
-
 // adapter is the srvlog-specific Adapter for logview.Model.
 var adapter = logview.Adapter[client.SrvlogEvent]{
 	Columns: columns,

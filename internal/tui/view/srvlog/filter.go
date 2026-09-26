@@ -4,19 +4,23 @@ import (
 	"net/url"
 	"strconv"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/lasseh/taillight-tui/internal/tui/component"
-	"github.com/lasseh/taillight-tui/internal/tui/theme"
 	"github.com/lasseh/taillight-tui/internal/tui/view/logview"
 )
 
-// FilterModel is the srvlog filter. It wraps the shared search input plus the
-// extra fields accepted by the srvlog SSE endpoint (hostname, program,
-// severity, facility). Metadata (hosts/programs) is loaded from the API and
-// used for typeahead in the filter popup.
+// Query params accepted by the srvlog and netlog SSE endpoints, used as popup
+// field keys and meta keys too.
+const (
+	paramHostname    = "hostname"
+	paramProgramname = "programname"
+	paramSeverityMax = "severity_max"
+	paramFacility    = "facility"
+)
+
+// FilterModel is the srvlog filter: the fields accepted by the srvlog SSE
+// endpoint beyond search. Metadata (hosts/programs) loaded from the API feeds
+// the popup's typeahead.
 type FilterModel struct {
-	search      logview.SearchFilter
 	hostname    string
 	program     string
 	severityMax int // -1 = unset
@@ -26,114 +30,81 @@ type FilterModel struct {
 }
 
 func newFilter() *FilterModel {
-	return &FilterModel{
-		search:      logview.NewSearchFilter(),
-		severityMax: -1,
-		facility:    -1,
-	}
+	return &FilterModel{severityMax: -1, facility: -1}
 }
 
-// Update implements logview.Filter.
-func (f *FilterModel) Update(msg tea.Msg) (logview.Filter, tea.Cmd) {
-	cmd := f.search.UpdateInput(msg)
-	return f, cmd
+// Meta keys typeahead suggestions for SetMeta.
+func Meta(hosts, programs []string) map[string][]string {
+	return map[string][]string{paramHostname: hosts, paramProgramname: programs}
 }
 
-// Focus implements logview.Filter.
-func (f *FilterModel) Focus() tea.Cmd { return f.search.Focus() }
-
-// Blur implements logview.Filter.
-func (f *FilterModel) Blur() { f.search.Blur() }
-
-// Dirty implements logview.Filter.
-func (f *FilterModel) Dirty() bool { return f.search.Dirty() }
-
-// AckDirty implements logview.Filter.
-func (f *FilterModel) AckDirty() { f.search.AckDirty() }
-
-// HasActiveFilter implements logview.Filter.
-func (f *FilterModel) HasActiveFilter() bool {
-	return f.search.Search() != "" || f.hostname != "" || f.program != "" ||
-		f.severityMax >= 0 || f.facility >= 0
+// SetMeta implements logview.Filter.
+func (f *FilterModel) SetMeta(meta map[string][]string) {
+	f.hosts = meta[paramHostname]
+	f.programs = meta[paramProgramname]
 }
 
-// SetMeta updates the available hosts/programs (loaded from the API).
-// Called by the app when MetaLoadedMsg arrives.
-func (f *FilterModel) SetMeta(hosts, programs []string) {
-	f.hosts = hosts
-	f.programs = programs
-}
-
-// Params implements logview.Filter — returns SSE stream query params.
+// Params implements logview.Filter.
 func (f *FilterModel) Params() url.Values {
 	v := url.Values{}
-	if s := f.search.Search(); s != "" {
-		v.Set("search", s)
-	}
 	if f.hostname != "" {
-		v.Set("hostname", f.hostname)
+		v.Set(paramHostname, f.hostname)
 	}
 	if f.program != "" {
-		v.Set("programname", f.program)
+		v.Set(paramProgramname, f.program)
 	}
 	if f.severityMax >= 0 {
-		v.Set("severity_max", strconv.Itoa(f.severityMax))
+		v.Set(paramSeverityMax, strconv.Itoa(f.severityMax))
 	}
 	if f.facility >= 0 {
-		v.Set("facility", strconv.Itoa(f.facility))
+		v.Set(paramFacility, strconv.Itoa(f.facility))
 	}
 	return v
 }
 
-// View implements logview.Filter — renders the filter bar.
-func (f *FilterModel) View(width int) string {
-	bar := f.search.Input.View()
-	return theme.FilterBar.Width(width).Render(bar)
-}
-
-// Clear resets every field to its empty state.
-func (f *FilterModel) Clear() {
-	f.search.Input.SetValue("")
-	f.hostname = ""
-	f.program = ""
-	f.severityMax = -1
-	f.facility = -1
-	f.search.MarkDirty()
-}
-
-// ApplyPopupValues copies values emitted by a FilterPopup into this filter.
-// Missing keys are treated as "keep current"; the popup always returns every
-// field key it owns, so empty strings mean "cleared".
-func (f *FilterModel) ApplyPopupValues(values map[string]string) {
-	if s, ok := values["search"]; ok {
-		f.search.Input.SetValue(s)
-		f.search.MarkDirty()
+// Pills implements logview.Filter.
+func (f *FilterModel) Pills(params url.Values) []string {
+	var pills []string
+	for _, p := range []struct{ key, label string }{
+		{paramHostname, "host="},
+		{paramProgramname, "prog="},
+		{paramSeverityMax, "sev≤"},
+		{paramFacility, "fac="},
+	} {
+		if v := params.Get(p.key); v != "" {
+			pills = append(pills, p.label+v)
+		}
 	}
-	if v, ok := values["hostname"]; ok {
+	return pills
+}
+
+// Apply implements logview.Filter.
+func (f *FilterModel) Apply(values map[string]string) {
+	if v, ok := values[paramHostname]; ok {
 		f.hostname = v
 	}
-	if v, ok := values["program"]; ok {
+	if v, ok := values[paramProgramname]; ok {
 		f.program = v
 	}
-	if v, ok := values["severity_max"]; ok {
-		if v == "" {
-			f.severityMax = -1
-		} else if n, err := strconv.Atoi(v); err == nil {
-			f.severityMax = n
-		}
+	if v, ok := values[paramSeverityMax]; ok {
+		f.severityMax = atoiOrUnset(v)
 	}
-	if v, ok := values["facility"]; ok {
-		if v == "" {
-			f.facility = -1
-		} else if n, err := strconv.Atoi(v); err == nil {
-			f.facility = n
-		}
+	if v, ok := values[paramFacility]; ok {
+		f.facility = atoiOrUnset(v)
 	}
 }
 
-// PopupFields builds the list of popup fields with current values and
-// metadata-driven suggestions, ready for component.NewFilterPopup.
-func (f *FilterModel) PopupFields() []component.Field {
+// atoiOrUnset parses a dropdown value; empty or invalid means unset (-1).
+func atoiOrUnset(v string) int {
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// Fields implements logview.Filter.
+func (f *FilterModel) Fields() []component.Field {
 	sevVal := ""
 	if f.severityMax >= 0 {
 		sevVal = strconv.Itoa(f.severityMax)
@@ -144,38 +115,32 @@ func (f *FilterModel) PopupFields() []component.Field {
 	}
 	return []component.Field{
 		{
-			Key:         "hostname",
+			Key:         paramHostname,
 			Label:       "Hostname",
 			Kind:        component.FieldText,
 			Suggestions: f.hosts,
 			Value:       f.hostname,
 		},
 		{
-			Key:         "program",
+			Key:         paramProgramname,
 			Label:       "Program",
 			Kind:        component.FieldText,
 			Suggestions: f.programs,
 			Value:       f.program,
 		},
 		{
-			Key:     "severity_max",
+			Key:     paramSeverityMax,
 			Label:   "Severity",
 			Kind:    component.FieldDropdown,
 			Options: severityOptions(),
 			Value:   sevVal,
 		},
 		{
-			Key:     "facility",
+			Key:     paramFacility,
 			Label:   "Facility",
 			Kind:    component.FieldDropdown,
 			Options: facilityOptions(),
 			Value:   facVal,
-		},
-		{
-			Key:   "search",
-			Label: "Search",
-			Kind:  component.FieldText,
-			Value: f.search.Search(),
 		},
 	}
 }

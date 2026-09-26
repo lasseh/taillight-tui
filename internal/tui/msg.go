@@ -13,13 +13,11 @@ type StreamStartedMsg struct {
 
 // API response messages.
 
-// MetaLoadedMsg carries metadata (hosts, programs, etc.) loaded from the API.
+// MetaLoadedMsg carries typeahead metadata (hosts, programs, etc.) loaded
+// from the API, keyed by filter field.
 type MetaLoadedMsg struct {
-	Feed       string
-	Hosts      []string
-	Programs   []string
-	Services   []string // applog only
-	Components []string // applog only
+	Feed string
+	Meta map[string][]string
 }
 
 // ErrorMsg carries an error to display in the status bar.

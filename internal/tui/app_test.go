@@ -2,7 +2,6 @@ package tui
 
 import (
 	"net/url"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/lasseh/taillight-tui/internal/tui/client"
 	"github.com/lasseh/taillight-tui/internal/tui/view/dashboard"
-	"github.com/lasseh/taillight-tui/internal/tui/view/srvlog"
 )
 
 // TestRefreshTickAlwaysReschedules guards the dashboard auto-refresh chain:
@@ -48,7 +46,7 @@ func TestSearchEnterAppliesToStream(t *testing.T) {
 	a.activeTab = TabSrvlog
 	a.focus = FocusFilter
 	a.srvlog.PushEvents([]client.SrvlogEvent{{ID: 1}, {ID: 2}})
-	srvlog.Filter(&a.srvlog).ApplyPopupValues(map[string]string{"search": "error"})
+	a.srvlog.ApplyPopupValues(map[string]string{"search": "error"})
 
 	_, cmd := a.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
@@ -66,46 +64,6 @@ func TestSearchEnterAppliesToStream(t *testing.T) {
 	}
 }
 
-// TestFilterPills guards the encoded-params → status bar pill translation:
-// labels must be compact, in fixed display order, and cover both the
-// srvlog/netlog and applog param vocabularies.
-func TestFilterPills(t *testing.T) {
-	tests := []struct {
-		name    string
-		encoded string
-		want    []string
-	}{
-		{name: "empty params", encoded: "", want: nil},
-		{name: "search only", encoded: "search=error", want: []string{"/error"}},
-		{
-			name: "srvlog fields in display order",
-			encoded: url.Values{
-				"severity_max": {"4"},
-				"hostname":     {"core1"},
-				"search":       {"bgp"},
-			}.Encode(),
-			want: []string{"host=core1", "sev≤4", "/bgp"},
-		},
-		{
-			name: "applog fields",
-			encoded: url.Values{
-				"service":   {"api"},
-				"level":     {"WARN"},
-				"component": {"ingest"},
-			}.Encode(),
-			want: []string{"svc=api", "comp=ingest", "lvl=WARN"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := filterPills(tt.encoded); !slices.Equal(got, tt.want) {
-				t.Errorf("filterPills(%q) = %v, want %v", tt.encoded, got, tt.want)
-			}
-		})
-	}
-}
-
 // TestSearchEnterShowsFilterPill guards the pill wiring: committing a search
 // must surface it as a status bar pill for the active tab, and switching to
 // the (filterless) dashboard must clear the pills again.
@@ -113,7 +71,7 @@ func TestSearchEnterShowsFilterPill(t *testing.T) {
 	a := NewApp(DefaultConfig(), nil)
 	a.activeTab = TabSrvlog
 	a.focus = FocusFilter
-	srvlog.Filter(&a.srvlog).ApplyPopupValues(map[string]string{"search": "error"})
+	a.srvlog.ApplyPopupValues(map[string]string{"search": "error"})
 
 	a.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
@@ -203,7 +161,7 @@ func TestRestartStreamUnchangedParamsIsNoop(t *testing.T) {
 	stream := client.NewSSEStream(c, "/api/v1/srvlog/stream", url.Values{}, 0)
 	defer stream.Close()
 	a.srvlogStream = stream
-	a.streamParams[TabSrvlog] = a.srvlog.Filter().Params().Encode()
+	a.streamParams[TabSrvlog] = a.srvlog.Params().Encode()
 
 	if cmd := a.restartStream(TabSrvlog); cmd != nil {
 		t.Error("restartStream with unchanged params should be a no-op")

@@ -1,14 +1,10 @@
 package tui
 
 import (
-	"net/url"
-
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lasseh/taillight-tui/internal/tui/component"
-	"github.com/lasseh/taillight-tui/internal/tui/view/applog"
-	"github.com/lasseh/taillight-tui/internal/tui/view/srvlog"
 )
 
 // handleKey routes a key press through help overlay → filter popup → filter
@@ -147,17 +143,11 @@ func (a *App) closePopup() {
 func (a *App) activeFilterFields() []component.Field {
 	switch a.activeTab {
 	case TabSrvlog:
-		if f := srvlog.Filter(&a.srvlog); f != nil {
-			return f.PopupFields()
-		}
+		return a.srvlog.PopupFields()
 	case TabNetlog:
-		if f := srvlog.Filter(&a.netlog); f != nil {
-			return f.PopupFields()
-		}
+		return a.netlog.PopupFields()
 	case TabApplog:
-		if f := applog.Filter(&a.applog); f != nil {
-			return f.PopupFields()
-		}
+		return a.applog.PopupFields()
 	case TabDashboard:
 		return nil
 	}
@@ -171,19 +161,13 @@ func (a *App) applyPopupFilter(values map[string]string) tea.Cmd {
 	var cmd tea.Cmd
 	switch a.activeTab {
 	case TabSrvlog:
-		if f := srvlog.Filter(&a.srvlog); f != nil {
-			f.ApplyPopupValues(values)
-		}
+		a.srvlog.ApplyPopupValues(values)
 		cmd = a.restartStream(TabSrvlog)
 	case TabNetlog:
-		if f := srvlog.Filter(&a.netlog); f != nil {
-			f.ApplyPopupValues(values)
-		}
+		a.netlog.ApplyPopupValues(values)
 		cmd = a.restartStream(TabNetlog)
 	case TabApplog:
-		if f := applog.Filter(&a.applog); f != nil {
-			f.ApplyPopupValues(values)
-		}
+		a.applog.ApplyPopupValues(values)
 		cmd = a.restartStream(TabApplog)
 	case TabDashboard:
 		return nil
@@ -197,36 +181,18 @@ func (a *App) applyPopupFilter(values map[string]string) tea.Cmd {
 // apply, search enter, tab switch) so pills always reflect the server-side
 // filtering in effect, never half-typed input.
 func (a *App) syncFilterPills() {
-	a.statusBar.SetFilters(filterPills(a.streamParams[a.activeTab]))
-}
-
-// filterPills converts a stream's encoded query params into compact status
-// bar pill labels in a fixed display order. Keys cover all feeds: srvlog and
-// netlog use hostname/programname/severity_max/facility, applog uses
-// service/component/host/level; search is shared.
-func filterPills(encoded string) []string {
-	vals, err := url.ParseQuery(encoded)
-	if err != nil || len(vals) == 0 {
-		return nil
+	var pills []string
+	encoded := a.streamParams[a.activeTab]
+	switch a.activeTab {
+	case TabSrvlog:
+		pills = a.srvlog.Pills(encoded)
+	case TabNetlog:
+		pills = a.netlog.Pills(encoded)
+	case TabApplog:
+		pills = a.applog.Pills(encoded)
+	case TabDashboard:
 	}
-	order := []struct{ key, label, sep string }{
-		{"hostname", "host", "="},
-		{"host", "host", "="},
-		{"programname", "prog", "="},
-		{"service", "svc", "="},
-		{"component", "comp", "="},
-		{"severity_max", "sev", "≤"},
-		{"facility", "fac", "="},
-		{"level", "lvl", "="},
-		{"search", "/", ""},
-	}
-	pills := make([]string, 0, len(vals))
-	for _, o := range order {
-		if v := vals.Get(o.key); v != "" {
-			pills = append(pills, o.label+o.sep+v)
-		}
-	}
-	return pills
+	a.statusBar.SetFilters(pills)
 }
 
 // restartStream closes the active stream for the tab (if any), clears the
@@ -238,7 +204,7 @@ func filterPills(encoded string) []string {
 func (a *App) restartStream(tab TabID) tea.Cmd {
 	switch tab {
 	case TabSrvlog:
-		if a.srvlogStream != nil && a.streamParams[tab] == a.srvlog.Filter().Params().Encode() {
+		if a.srvlogStream != nil && a.streamParams[tab] == a.srvlog.Params().Encode() {
 			return nil
 		}
 		if a.srvlogStream != nil {
@@ -247,7 +213,7 @@ func (a *App) restartStream(tab TabID) tea.Cmd {
 		}
 		a.srvlog.ClearEvents()
 	case TabApplog:
-		if a.applogStream != nil && a.streamParams[tab] == a.applog.Filter().Params().Encode() {
+		if a.applogStream != nil && a.streamParams[tab] == a.applog.Params().Encode() {
 			return nil
 		}
 		if a.applogStream != nil {
@@ -256,7 +222,7 @@ func (a *App) restartStream(tab TabID) tea.Cmd {
 		}
 		a.applog.ClearEvents()
 	case TabNetlog:
-		if a.netlogStream != nil && a.streamParams[tab] == a.netlog.Filter().Params().Encode() {
+		if a.netlogStream != nil && a.streamParams[tab] == a.netlog.Params().Encode() {
 			return nil
 		}
 		if a.netlogStream != nil {
