@@ -14,13 +14,11 @@ golden-fixture contract tests, plus seven functional bug fixes. The
 
 ## Remaining
 
-- **Tag `pkg/logshipper` and pin it.** This repo depends on logshipper via a
-  stale pseudo-version of the main repo's default branch — now behind an
-  upstream ingest-contract fix (client-side service validation + msg
-  truncation, main repo commit `f14db64`). The main repo adopted tagged
-  releases (its ADR-0005), so this is actionable **once the main repo's
-  `chore/arch-review-execution` branch merges and pushes**: cut
-  `pkg/logshipper/v0.1.0` there, then `go get` the tag here.
+- **Tag `pkg/logshipper` and pin it.** This repo tracks logshipper via a
+  pseudo-version of the main repo's `main` (`02e754b`, includes the
+  `f14db64` ingest-contract fix). The main repo's ADR-0005 tags root `v*`
+  releases, which don't version the `pkg/logshipper` submodule; cut a
+  `pkg/logshipper/v*` tag there, then `go get` the tag here.
 
 - **rebuildTable render cache (measure first).** The O(buffer) lexer re-render
   per 50 ms tick is *inferred* to lag on busy feeds, not measured — same

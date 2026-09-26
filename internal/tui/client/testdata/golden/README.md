@@ -2,7 +2,8 @@
 
 Source of truth: the main repo's generated fixtures at
 `github.com/lasseh/taillight` → `api/internal/handler/testdata/golden/`
-(copied verbatim from commit `e0f23e5`). They are generated from the real
+(copied verbatim from commit `e0f23e5`; re-checked byte-identical against
+main-repo `main` at `02e754b` on 2026-09-26). They are generated from the real
 server types by `TestGolden` there (`go test ./internal/handler -run
 TestGolden -update`) and cannot be imported or embedded here because they
 live under another module's `internal/` tree — a manual copy is the
