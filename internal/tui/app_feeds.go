@@ -46,8 +46,9 @@ type liveTab interface {
 	// repopulates it with matching events.
 	restart()
 	// drain moves pending events into the view, pushes toasts for alerting
-	// events, and returns the count of undecodable payloads.
-	drain(toasts *component.ToastQueue) (parseErrors int)
+	// events, and returns the count of undecodable payloads. A non-nil err
+	// means the stream stopped for good; the next start reopens it.
+	drain(toasts *component.ToastQueue) (parseErrors int, err error)
 	connected() bool
 	close()
 	// pills renders status bar labels for the filter the open stream runs
@@ -87,8 +88,8 @@ func (t *logTab[T]) restart() {
 	}
 }
 
-func (t *logTab[T]) drain(toasts *component.ToastQueue) int {
-	events, parseErrors := t.feed.Drain(drainBatch)
+func (t *logTab[T]) drain(toasts *component.ToastQueue) (int, error) {
+	events, parseErrors, err := t.feed.Drain(drainBatch)
 	if len(events) > 0 {
 		t.PushEvents(events)
 		for i := range events {
@@ -97,7 +98,7 @@ func (t *logTab[T]) drain(toasts *component.ToastQueue) int {
 			}
 		}
 	}
-	return parseErrors
+	return parseErrors, err
 }
 
 func (t *logTab[T]) connected() bool { return t.feed.Connected() }

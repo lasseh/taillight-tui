@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -243,6 +244,61 @@ func TestDrainToastsAndParseErrors(t *testing.T) {
 	if got := srvlogTab(t, a).EventCount(); got != 2 {
 		t.Errorf("EventCount = %d, want 2", got)
 	}
+}
+
+// TestStreamAuthFailureSurfaces guards against a silently dead feed: when a
+// stream is rejected mid-session (revoked key), the tick raises the auth
+// error and re-entering the tab opens a fresh stream.
+func TestStreamAuthFailureSurfaces(t *testing.T) {
+	a, open := newTestApp(t)
+	a.switchTab(TabSrvlog)
+	open.Last(srvlogPath).Fail(client.ErrUnauthorized)
+
+	_, cmd := a.Update(SSETickMsg{})
+	var gotErr error
+	for _, msg := range runBatch(cmd) {
+		if e, ok := msg.(ErrorMsg); ok {
+			gotErr = e.Err
+		}
+	}
+	if !errors.Is(gotErr, client.ErrUnauthorized) {
+		t.Fatalf("tick after auth failure raised %v, want ErrUnauthorized", gotErr)
+	}
+	a.Update(ErrorMsg{Err: gotErr})
+	if got := a.statusBar.View(160); !strings.Contains(got, "authentication failed") {
+		t.Errorf("status bar missing auth error\nrendered: %q", got)
+	}
+
+	a.switchTab(TabDashboard)
+	a.switchTab(TabSrvlog)
+	if len(open.Opened) != 2 {
+		t.Errorf("opened %d streams, want 2 (re-entry reopens the dead feed)", len(open.Opened))
+	}
+}
+
+// runBatch runs cmd and, for a tea.BatchMsg, each command inside it, skipping
+// tick commands (which block until they fire).
+func runBatch(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+	var msg tea.Msg
+	select {
+	case msg = <-done:
+	case <-time.After(200 * time.Millisecond):
+		return nil // a tick; not what we're looking for
+	}
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		return []tea.Msg{msg}
+	}
+	var msgs []tea.Msg
+	for _, c := range batch {
+		msgs = append(msgs, runBatch(c)...)
+	}
+	return msgs
 }
 
 // TestCleanupClosesStreams guards against leaking streams when a session

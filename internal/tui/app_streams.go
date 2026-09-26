@@ -15,11 +15,18 @@ func (a *App) sseTick() tea.Cmd {
 
 // drainAllStreams moves pending events from every live feed into its view.
 // Alerting events also trigger toast notifications. Tracks JSON parse
-// failures so the user is alerted via the status bar.
-func (a *App) drainAllStreams() {
+// failures so the user is alerted via the status bar. Returns a Cmd raising
+// an ErrorMsg when a stream stopped for good (e.g. the API key was revoked
+// mid-session), so the failure is visible instead of a silently dead tab.
+func (a *App) drainAllStreams() tea.Cmd {
+	var stopped error
 	for _, id := range AllTabs {
 		if t, ok := a.feeds[id]; ok {
-			a.parseErrors += t.drain(&a.toasts)
+			n, err := t.drain(&a.toasts)
+			a.parseErrors += n
+			if err != nil && stopped == nil {
+				stopped = err
+			}
 		}
 	}
 	a.statusBar.SetParseErrors(a.parseErrors)
@@ -27,6 +34,11 @@ func (a *App) drainAllStreams() {
 	// Prune expired toasts.
 	a.toasts.Prune()
 	a.statusBar.SetConnected(a.isConnected())
+
+	if stopped == nil {
+		return nil
+	}
+	return func() tea.Msg { return ErrorMsg{Err: stopped} }
 }
 
 // isConnected returns true if ANY SSE stream is currently connected.

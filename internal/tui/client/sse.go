@@ -31,7 +31,8 @@ type SSEStream struct {
 	connected atomic.Bool
 	lastID    atomic.Int64
 	// authFailed is set when the server responds 401/403. The stream stops
-	// retrying — retrying auth failures indefinitely is wrong.
+	// retrying — retrying auth failures indefinitely is wrong — and Err
+	// reports it to the owner. Stored before the event channel closes.
 	authFailed atomic.Bool
 }
 
@@ -63,6 +64,16 @@ func (s *SSEStream) Connected() bool {
 // LastID returns the ID of the most recently delivered event.
 func (s *SSEStream) LastID() int64 {
 	return s.lastID.Load()
+}
+
+// Err reports why the stream stopped for good: ErrUnauthorized after the
+// server rejected the credentials, nil while running or after Close. Once the
+// event channel is closed, Err is final.
+func (s *SSEStream) Err() error {
+	if s.authFailed.Load() {
+		return ErrUnauthorized
+	}
+	return nil
 }
 
 // Close stops the stream and closes the event channel.

@@ -21,7 +21,17 @@ type Stream struct {
 	ch        chan client.SSEEvent
 	connected bool
 	closed    bool
+	err       error
 	endOnce   sync.Once
+}
+
+// Err implements feed.Stream.
+func (s *Stream) Err() error { return s.err }
+
+// Fail ends the stream with err, as a stream does after e.g. a 401.
+func (s *Stream) Fail(err error) {
+	s.err = err
+	s.End()
 }
 
 func newStream(path string, params url.Values) *Stream {

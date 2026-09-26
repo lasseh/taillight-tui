@@ -162,9 +162,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handleKey(msg)
 
 	case SSETickMsg:
-		a.drainAllStreams()
-		cmd := a.sseTick()
-		return a, cmd
+		return a, tea.Batch(a.drainAllStreams(), a.sseTick())
 
 	case MetaLoadedMsg:
 		if t, ok := a.feeds[msg.Tab]; ok {

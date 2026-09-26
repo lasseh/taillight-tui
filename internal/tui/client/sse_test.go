@@ -3,10 +3,43 @@ package client
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+// TestStreamReportsAuthFailure guards the terminal state: a 401/403 ends the
+// stream (closed channel, no retries) and Err tells the owner why.
+func TestStreamReportsAuthFailure(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+
+			s := NewSSEStream(New(Config{BaseURL: srv.URL}), "/api/v1/srvlog/stream", nil, 0)
+			defer s.Close()
+			if err := s.Err(); err != nil {
+				t.Fatalf("Err() before failure = %v, want nil", err)
+			}
+
+			select {
+			case _, ok := <-s.Events():
+				if ok {
+					t.Fatal("unexpected event from rejected stream")
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("stream did not stop after auth failure")
+			}
+			if err := s.Err(); !errors.Is(err, ErrUnauthorized) {
+				t.Errorf("Err() = %v, want ErrUnauthorized", err)
+			}
+		})
+	}
+}
 
 func TestSplitSSEField(t *testing.T) {
 	tests := []struct {

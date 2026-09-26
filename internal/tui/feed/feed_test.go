@@ -1,9 +1,11 @@
 package feed_test
 
 import (
+	"errors"
 	"net/url"
 	"testing"
 
+	"github.com/lasseh/taillight-tui/internal/tui/client"
 	"github.com/lasseh/taillight-tui/internal/tui/feed"
 	"github.com/lasseh/taillight-tui/internal/tui/feed/feedtest"
 )
@@ -100,7 +102,10 @@ func TestDrain(t *testing.T) {
 			if tt.end {
 				s.End()
 			}
-			events, parseErrs := f.Drain(tt.maxEvents)
+			events, parseErrs, err := f.Drain(tt.maxEvents)
+			if err != nil {
+				t.Errorf("Drain() err = %v, want nil", err)
+			}
 			if parseErrs != tt.wantParsErr {
 				t.Errorf("parseErrors = %d, want %d", parseErrs, tt.wantParsErr)
 			}
@@ -116,10 +121,35 @@ func TestDrain(t *testing.T) {
 	}
 }
 
+// TestDrainReportsStoppedStream guards the terminal state: a stream that
+// stopped for good surfaces its error once, is dropped, and the next Start
+// opens a fresh one.
+func TestDrainReportsStoppedStream(t *testing.T) {
+	f, open := newFeed()
+	f.Start(nil)
+	s := open.Opened[0]
+	s.SendRaw(`{"id":1}`)
+	s.Fail(client.ErrUnauthorized)
+
+	events, _, err := f.Drain(10)
+	if len(events) != 1 {
+		t.Errorf("got %d events, want the 1 delivered before the stop", len(events))
+	}
+	if !errors.Is(err, client.ErrUnauthorized) {
+		t.Fatalf("Drain() err = %v, want ErrUnauthorized", err)
+	}
+	if _, _, err := f.Drain(10); err != nil {
+		t.Errorf("second Drain() err = %v, want nil (error reported once)", err)
+	}
+	if !f.Start(nil) {
+		t.Error("Start after a stopped stream must open a new one")
+	}
+}
+
 func TestDrainWithoutStream(t *testing.T) {
 	f, _ := newFeed()
-	if events, parseErrs := f.Drain(10); events != nil || parseErrs != 0 {
-		t.Errorf("Drain() = (%v, %d), want (nil, 0)", events, parseErrs)
+	if events, parseErrs, err := f.Drain(10); events != nil || parseErrs != 0 || err != nil {
+		t.Errorf("Drain() = (%v, %d, %v), want (nil, 0, nil)", events, parseErrs, err)
 	}
 	if f.Connected() {
 		t.Error("feed without a stream must not report connected")

@@ -6,6 +6,7 @@ package feed
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 
 	"github.com/lasseh/taillight-tui/internal/tui/client"
@@ -14,9 +15,13 @@ import (
 // Stream is the live event source a Feed drains. *client.SSEStream is the
 // production adapter; feedtest.Stream is the in-memory adapter for tests.
 type Stream interface {
+	// Events delivers parsed events; it is closed when the stream stops
+	// for good.
 	Events() <-chan client.SSEEvent
 	Connected() bool
 	Close()
+	// Err reports why a stopped stream ended (e.g. client.ErrUnauthorized).
+	Err() error
 }
 
 // Opener starts a stream for an SSE path with filter query params. Opening
@@ -79,27 +84,35 @@ func (f *Feed[T]) openStream(params url.Values) {
 // Drain reads up to maxEvents pending events without blocking, decoding each
 // payload into T. It returns the events in arrival order plus the count of
 // payloads that failed to decode. Draining a feed with no stream is a no-op.
-func (f *Feed[T]) Drain(maxEvents int) (events []T, parseErrors int) {
+//
+// When the stream has stopped for good, Drain drops it — so the next Start
+// opens a fresh one — and returns why it stopped, wrapped with the feed's
+// path. Events delivered before the stop are still returned.
+func (f *Feed[T]) Drain(maxEvents int) (events []T, parseErrors int, err error) {
 	if f.stream == nil {
-		return nil, 0
+		return nil, 0, nil
 	}
 	for range maxEvents {
 		select {
 		case evt, ok := <-f.stream.Events():
 			if !ok {
-				return events, parseErrors
+				if serr := f.stream.Err(); serr != nil {
+					err = fmt.Errorf("%s: %w", f.path, serr)
+				}
+				f.Close()
+				return events, parseErrors, err
 			}
 			var e T
-			if err := json.Unmarshal(evt.Data, &e); err != nil {
+			if uerr := json.Unmarshal(evt.Data, &e); uerr != nil {
 				parseErrors++
 				continue
 			}
 			events = append(events, e)
 		default:
-			return events, parseErrors
+			return events, parseErrors, nil
 		}
 	}
-	return events, parseErrors
+	return events, parseErrors, nil
 }
 
 // Connected reports whether the feed's stream is currently connected.
