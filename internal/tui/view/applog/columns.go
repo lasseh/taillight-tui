@@ -45,8 +45,8 @@ func eventToRow(e client.AppLogEvent, timeFormat string) table.Row {
 	bar := lipglossBar(e.Level)
 	ts := theme.Timestamp.Render(" " + e.Timestamp.Local().Format(timeFormat) + " ")
 	lvl := theme.AppLogLevelStyle(e.Level).Render(highlight.PadRight(e.Level, fixedLevelWidth-1) + " ")
-	svc := theme.Program.Render(highlight.Truncate(e.Service, 20))
-	comp := lipgloss.NewStyle().Foreground(theme.ColorYellow).Render(highlight.Truncate(e.Component, 16))
+	svc := theme.Program.Render(e.Service)
+	comp := lipgloss.NewStyle().Foreground(theme.ColorYellow).Render(e.Component)
 
 	// Message + inline attrs (like the web GUI: "msg - key=val key=val").
 	msg := highlight.Message(e.Msg)

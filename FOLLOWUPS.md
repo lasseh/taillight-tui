@@ -14,11 +14,6 @@ golden-fixture contract tests, plus seven functional bug fixes. The
 
 ## Remaining
 
-- **Column-width-aware cell truncation.** Row builders truncate cells to magic
-  constants (20/16) that don't track the dynamically computed column widths.
-  Fixing this properly changes the adapter signatures so `eventToRow` receives
-  the computed widths — a small design item, not mechanical (review lens 03 R11).
-
 - **Tag `pkg/logshipper` and pin it.** This repo depends on logshipper via a
   stale pseudo-version of the main repo's default branch — now behind an
   upstream ingest-contract fix (client-side service validation + msg

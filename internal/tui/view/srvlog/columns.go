@@ -42,8 +42,8 @@ func eventToRow(e client.SrvlogEvent, timeFormat string) table.Row {
 	bar := theme.SeverityBar(e.Severity)
 	ts := theme.Timestamp.Render(" " + e.ReceivedAt.Local().Format(timeFormat) + " ")
 	sev := theme.SeverityStyle(e.Severity).Render(highlight.PadRight(strings.ToUpper(e.SeverityLabel), fixedSeverityWidth-1) + " ")
-	host := theme.Hostname.Render(highlight.Truncate(e.Hostname, 20))
-	prog := theme.Program.Render(highlight.Truncate(e.Programname, 16))
+	host := theme.Hostname.Render(e.Hostname)
+	prog := theme.Program.Render(e.Programname)
 	msg := highlight.Message(e.Message)
 
 	return table.Row{bar, ts, sev, host, prog, msg}
