@@ -1,22 +1,11 @@
 package tui
 
-import (
-	"github.com/lasseh/taillight-tui/internal/tui/client"
-)
-
-// StreamStartedMsg carries a newly created SSE stream back to the Update
-// handler for safe assignment. Cmds must not mutate the model directly.
-type StreamStartedMsg struct {
-	Feed   string // "srvlog", "applog", "netlog"
-	Stream *client.SSEStream
-}
-
 // API response messages.
 
 // MetaLoadedMsg carries typeahead metadata (hosts, programs, etc.) loaded
-// from the API, keyed by filter field.
+// from the API for a log tab, keyed by filter field.
 type MetaLoadedMsg struct {
-	Feed string
+	Tab  TabID
 	Meta map[string][]string
 }
 

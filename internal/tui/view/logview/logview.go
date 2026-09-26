@@ -256,23 +256,23 @@ func (m *Model[T]) CloseDetail() {
 }
 
 // UpdateFilter handles input when the filter bar is focused.
-func (m Model[T]) UpdateFilter(msg tea.Msg) (Model[T], tea.Cmd) {
+func (m *Model[T]) UpdateFilter(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	m.search, cmd = m.search.Update(msg)
-	return m, cmd
+	return cmd
 }
 
 // UpdateTable handles input when the table is focused.
-func (m Model[T]) UpdateTable(msg tea.Msg) (Model[T], tea.Cmd) {
+func (m *Model[T]) UpdateTable(msg tea.Msg) tea.Cmd {
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch {
 		case key.Matches(msg, enterKey):
 			m.openDetail()
-			return m, nil
+			return nil
 		case key.Matches(msg, escKey):
 			if m.detail != nil {
 				m.CloseDetail()
-				return m, nil
+				return nil
 			}
 		}
 	}
@@ -293,7 +293,7 @@ func (m Model[T]) UpdateTable(msg tea.Msg) (Model[T], tea.Cmd) {
 		}
 	}
 
-	return m, cmd
+	return cmd
 }
 
 // View renders the log view with optional detail sidebar.

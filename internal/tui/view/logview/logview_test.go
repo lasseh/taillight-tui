@@ -110,12 +110,12 @@ func TestClearEvents(t *testing.T) {
 func TestClearEventsClosesDetail(t *testing.T) {
 	m := newTestModel(t, 100)
 	m.PushEvents([]fakeEvent{{ID: 1, Message: "stale"}})
-	updated, _ := m.UpdateTable(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !updated.DetailOpen() {
+	m.UpdateTable(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.DetailOpen() {
 		t.Fatal("detail should be open after Enter")
 	}
-	updated.ClearEvents()
-	if updated.DetailOpen() {
+	m.ClearEvents()
+	if m.DetailOpen() {
 		t.Error("detail should close on ClearEvents — its event may no longer match")
 	}
 }
@@ -161,12 +161,12 @@ func TestDetailLifecycle(t *testing.T) {
 		t.Error("detail should not be open initially")
 	}
 	// Send Enter to open detail
-	updated, _ := m.UpdateTable(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !updated.DetailOpen() {
+	m.UpdateTable(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.DetailOpen() {
 		t.Error("detail should be open after Enter")
 	}
-	updated.CloseDetail()
-	if updated.DetailOpen() {
+	m.CloseDetail()
+	if m.DetailOpen() {
 		t.Error("detail should be closed after CloseDetail")
 	}
 }

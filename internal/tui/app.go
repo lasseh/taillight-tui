@@ -5,13 +5,14 @@
 //   - app.go         — root model: NewApp, Init, Update, View, switchTab,
 //     Cleanup, contentHeight
 //   - app_keys.go    — key routing: handleKey and per-tab focus/update helpers
-//   - app_streams.go — SSE stream lifecycle, drain loop, metadata loaders,
-//     isConnected
-//   - app_toast.go   — toast notification helpers for critical events
+//   - app_feeds.go   — live log tabs: view + feed per tab, metadata loaders
+//   - app_streams.go — drain loop and isConnected
+//   - app_toast.go   — per-feed toast rules for alerting events
 //   - keys.go        — global key bindings and tab IDs
 //   - msg.go         — message types
 //   - theme/         — Tokyo Night colors and lipgloss styles
 //   - client/        — HTTP/SSE client for the Taillight API
+//   - feed/          — SSE feed lifecycle (open, restart, drain, close)
 //   - view/          — per-tab views (srvlog, applog, dashboard, ...); the
 //     netlog tab reuses the srvlog view since both feeds share the schema
 //   - component/     — shared components (statusbar, tabbar, toast)
@@ -29,10 +30,9 @@ import (
 
 	"github.com/lasseh/taillight-tui/internal/tui/client"
 	"github.com/lasseh/taillight-tui/internal/tui/component"
+	"github.com/lasseh/taillight-tui/internal/tui/feed"
 	"github.com/lasseh/taillight-tui/internal/tui/theme"
-	"github.com/lasseh/taillight-tui/internal/tui/view/applog"
 	"github.com/lasseh/taillight-tui/internal/tui/view/dashboard"
-	"github.com/lasseh/taillight-tui/internal/tui/view/srvlog"
 )
 
 // Config holds display configuration for the App.
@@ -66,11 +66,10 @@ type App struct {
 	activeTab TabID
 	focus     FocusTarget
 
-	// Sub-models. The netlog tab reuses the srvlog view: netlog events share
-	// the srvlog schema, so both instantiate the same generic logview.
-	srvlog    srvlog.Model
-	applog    applog.Model
-	netlog    srvlog.Model
+	// Live log tabs, each a view plus its SSE feed. The netlog tab reuses
+	// the srvlog view: netlog events share the srvlog schema.
+	feeds map[TabID]liveTab
+
 	dashboard dashboard.Model
 	tabBar    component.TabBar
 	statusBar component.StatusBar
@@ -79,15 +78,6 @@ type App struct {
 
 	// Track which views have been initialized.
 	dashboardInit bool
-
-	// Per-tab SSE streams. nil when not active.
-	srvlogStream *client.SSEStream
-	applogStream *client.SSEStream
-	netlogStream *client.SSEStream
-
-	// Encoded query params each stream was started with, used by
-	// restartStream to skip no-op restarts that would wipe the buffer.
-	streamParams map[TabID]string
 
 	// Notification toasts.
 	toasts component.ToastQueue
@@ -104,6 +94,11 @@ type App struct {
 // NewApp creates the root App model. This constructor is wish-compatible: it
 // takes config and client, not stdin/stdout.
 func NewApp(cfg Config, c *client.Client) *App {
+	return newApp(cfg, c, feed.SSEOpener(c))
+}
+
+// newApp builds the App with every SSE stream opened through open.
+func newApp(cfg Config, c *client.Client, open feed.Opener) *App {
 	if cfg.BufferSize <= 0 {
 		cfg.BufferSize = 10000
 	}
@@ -123,20 +118,17 @@ func NewApp(cfg Config, c *client.Client) *App {
 	}
 
 	return &App{
-		cfg:          cfg,
-		client:       c,
-		keys:         DefaultKeyMap(),
-		activeTab:    TabDashboard,
-		focus:        FocusTable,
-		srvlog:       srvlog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
-		applog:       applog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
-		netlog:       srvlog.New(cfg.BufferSize, cfg.TimeFormat, cfg.AutoScroll),
-		dashboard:    dashboard.New(c),
-		toasts:       component.NewToastQueue(),
-		streamParams: make(map[TabID]string),
-		tabBar:       component.NewTabBar(tabs),
-		statusBar:    component.NewStatusBar(),
-		helpModel:    help.New(),
+		cfg:       cfg,
+		client:    c,
+		keys:      DefaultKeyMap(),
+		activeTab: TabDashboard,
+		focus:     FocusTable,
+		feeds:     newLogTabs(cfg, c, open),
+		dashboard: dashboard.New(c),
+		toasts:    component.NewToastQueue(),
+		tabBar:    component.NewTabBar(tabs),
+		statusBar: component.NewStatusBar(),
+		helpModel: help.New(),
 	}
 }
 
@@ -157,38 +149,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.height = msg.Height
 		a.helpModel.SetWidth(msg.Width)
 		ch := a.contentHeight()
-		a.srvlog.SetSize(msg.Width, ch)
-		a.applog.SetSize(msg.Width, ch)
-		a.netlog.SetSize(msg.Width, ch)
+		for _, t := range a.feeds {
+			t.SetSize(msg.Width, ch)
+		}
 		a.dashboard.SetSize(msg.Width, ch)
 		if a.popup != nil {
 			a.popup.SetSize(msg.Width, msg.Height)
-		}
-		return a, nil
-
-	case StreamStartedMsg:
-		// Close any stream already running for the feed before storing the
-		// new one. Between dispatching a start Cmd and this message arriving
-		// the stream field is nil, so a second start can be triggered in that
-		// window (rapid tab bouncing, double filter apply); overwriting the
-		// pointer without Close would leak the old stream's reconnect
-		// goroutine and connection for the life of the process.
-		switch msg.Feed {
-		case "srvlog":
-			if a.srvlogStream != nil {
-				a.srvlogStream.Close()
-			}
-			a.srvlogStream = msg.Stream
-		case "applog":
-			if a.applogStream != nil {
-				a.applogStream.Close()
-			}
-			a.applogStream = msg.Stream
-		case "netlog":
-			if a.netlogStream != nil {
-				a.netlogStream.Close()
-			}
-			a.netlogStream = msg.Stream
 		}
 		return a, nil
 
@@ -201,13 +167,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 
 	case MetaLoadedMsg:
-		switch msg.Feed {
-		case "srvlog":
-			a.srvlog.SetMeta(msg.Meta)
-		case "applog":
-			a.applog.SetMeta(msg.Meta)
-		case "netlog":
-			a.netlog.SetMeta(msg.Meta)
+		if t, ok := a.feeds[msg.Tab]; ok {
+			t.SetMeta(msg.Meta)
 		}
 		return a, nil
 
@@ -236,8 +197,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.dashboard.RefreshTickCmd()
 
 	case component.FilterPopupAppliedMsg:
-		cmd := a.applyPopupFilter(msg.Values)
-		return a, cmd
+		a.applyPopupFilter(msg.Values)
+		return a, nil
 
 	case ErrorMsg:
 		a.lastError = msg.Err.Error()
@@ -293,14 +254,9 @@ func (a *App) View() tea.View {
 
 	// Main content — rendered into a fixed-height box.
 	var content string
-	switch a.activeTab {
-	case TabSrvlog:
-		content = a.srvlog.View()
-	case TabApplog:
-		content = a.applog.View()
-	case TabNetlog:
-		content = a.netlog.View()
-	case TabDashboard:
+	if t, ok := a.feeds[a.activeTab]; ok {
+		content = t.View()
+	} else {
 		content = a.dashboard.View()
 	}
 
@@ -349,17 +305,8 @@ func (a *App) contentHeight() int {
 // bubbletea program returns from Run() so SSE goroutines and TCP
 // connections don't leak. Safe to call multiple times.
 func (a *App) Cleanup() {
-	if a.srvlogStream != nil {
-		a.srvlogStream.Close()
-		a.srvlogStream = nil
-	}
-	if a.applogStream != nil {
-		a.applogStream.Close()
-		a.applogStream = nil
-	}
-	if a.netlogStream != nil {
-		a.netlogStream.Close()
-		a.netlogStream = nil
+	for _, t := range a.feeds {
+		t.close()
 	}
 	a.dashboard.Close()
 }
@@ -379,32 +326,16 @@ func (a *App) switchTab(tab TabID) tea.Cmd {
 	// Start stream for the new tab if not already running. Streams stay
 	// alive across tab switches so toast notifications fire for events
 	// from non-visible tabs too.
-	switch tab {
-	case TabSrvlog:
-		if a.srvlogStream == nil {
-			cmds = append(cmds, a.startStream(TabSrvlog))
-			cmds = append(cmds, a.loadSrvlogMeta())
+	if t, ok := a.feeds[tab]; ok {
+		if t.start() {
+			cmds = append(cmds, a.loadMeta(tab, t))
 		}
-	case TabApplog:
-		if a.applogStream == nil {
-			cmds = append(cmds, a.startStream(TabApplog))
-			cmds = append(cmds, a.loadApplogMeta())
-		}
-	case TabNetlog:
-		if a.netlogStream == nil {
-			cmds = append(cmds, a.startStream(TabNetlog))
-			cmds = append(cmds, a.loadNetlogMeta())
-		}
-	case TabDashboard:
-		if !a.dashboardInit {
-			a.dashboardInit = true
-			cmds = append(cmds, a.dashboard.Init())
-		}
+	} else if tab == TabDashboard && !a.dashboardInit {
+		a.dashboardInit = true
+		cmds = append(cmds, a.dashboard.Init())
 	}
 
 	// Pills are per-tab: show the params the new tab's stream runs with.
-	// startStream above records them synchronously, so this is current
-	// even when the stream itself is still connecting.
 	a.syncFilterPills()
 
 	return tea.Batch(cmds...)

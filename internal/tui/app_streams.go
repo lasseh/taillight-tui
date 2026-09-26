@@ -1,52 +1,10 @@
 package tui
 
 import (
-	"context"
-	"fmt"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/lasseh/taillight-tui/internal/tui/client"
-	"github.com/lasseh/taillight-tui/internal/tui/view/applog"
-	"github.com/lasseh/taillight-tui/internal/tui/view/srvlog"
 )
-
-// metaLoadTimeout is the budget for fetching meta (hosts/programs/services).
-// Bounded so hung API calls don't leak goroutines forever.
-const metaLoadTimeout = 10 * time.Second
-
-// startStream begins an SSE connection for the given feed. The stream is
-// returned via StreamStartedMsg so it can be safely assigned in Update (Cmds
-// must not mutate the model).
-func (a *App) startStream(tab TabID) tea.Cmd {
-	c := a.client
-	switch tab {
-	case TabSrvlog:
-		params := a.srvlog.Params()
-		a.streamParams[tab] = params.Encode()
-		return func() tea.Msg {
-			stream := client.NewSSEStream(c, "/api/v1/srvlog/stream", params, 0)
-			return StreamStartedMsg{Feed: "srvlog", Stream: stream}
-		}
-	case TabApplog:
-		params := a.applog.Params()
-		a.streamParams[tab] = params.Encode()
-		return func() tea.Msg {
-			stream := client.NewSSEStream(c, "/api/v1/applog/stream", params, 0)
-			return StreamStartedMsg{Feed: "applog", Stream: stream}
-		}
-	case TabNetlog:
-		params := a.netlog.Params()
-		a.streamParams[tab] = params.Encode()
-		return func() tea.Msg {
-			stream := client.NewSSEStream(c, "/api/v1/netlog/stream", params, 0)
-			return StreamStartedMsg{Feed: "netlog", Stream: stream}
-		}
-	default:
-		return nil
-	}
-}
 
 // sseTick returns a command that fires an SSETickMsg after the batch interval.
 func (a *App) sseTick() tea.Cmd {
@@ -55,49 +13,15 @@ func (a *App) sseTick() tea.Cmd {
 	})
 }
 
-// drainAllStreams reads events from all active SSE streams and pushes them to
-// the corresponding views. Critical events also trigger toast notifications.
-// Tracks JSON parse failures so the user is alerted via the status bar.
+// drainAllStreams moves pending events from every live feed into its view.
+// Alerting events also trigger toast notifications. Tracks JSON parse
+// failures so the user is alerted via the status bar.
 func (a *App) drainAllStreams() {
-	if a.srvlogStream != nil {
-		events, parseErrs := client.Drain[client.SrvlogEvent](a.srvlogStream, 100)
-		a.parseErrors += parseErrs
-		if len(events) > 0 {
-			a.srvlog.PushEvents(events)
-			for i := range events {
-				if events[i].Severity <= notifySeverityMax {
-					a.pushSrvlogToast(events[i], "srvlog")
-				}
-			}
+	for _, id := range AllTabs {
+		if t, ok := a.feeds[id]; ok {
+			a.parseErrors += t.drain(&a.toasts)
 		}
 	}
-
-	if a.applogStream != nil {
-		events, parseErrs := client.Drain[client.AppLogEvent](a.applogStream, 100)
-		a.parseErrors += parseErrs
-		if len(events) > 0 {
-			a.applog.PushEvents(events)
-			for i := range events {
-				if events[i].Level == "FATAL" || events[i].Level == "ERROR" {
-					a.pushApplogToast(events[i])
-				}
-			}
-		}
-	}
-
-	if a.netlogStream != nil {
-		events, parseErrs := client.Drain[client.SrvlogEvent](a.netlogStream, 100)
-		a.parseErrors += parseErrs
-		if len(events) > 0 {
-			a.netlog.PushEvents(events)
-			for i := range events {
-				if events[i].Severity <= notifySeverityMax {
-					a.pushSrvlogToast(events[i], "netlog")
-				}
-			}
-		}
-	}
-
 	a.statusBar.SetParseErrors(a.parseErrors)
 
 	// Prune expired toasts.
@@ -108,74 +32,10 @@ func (a *App) drainAllStreams() {
 // isConnected returns true if ANY SSE stream is currently connected.
 // Checks all log-view streams AND the dashboard's own streams.
 func (a *App) isConnected() bool {
-	if a.srvlogStream != nil && a.srvlogStream.Connected() {
-		return true
-	}
-	if a.applogStream != nil && a.applogStream.Connected() {
-		return true
-	}
-	if a.netlogStream != nil && a.netlogStream.Connected() {
-		return true
-	}
-	if a.dashboard.Connected() {
-		return true
-	}
-	return false
-}
-
-// Metadata loaders.
-
-func (a *App) loadSrvlogMeta() tea.Cmd {
-	c := a.client
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), metaLoadTimeout)
-		defer cancel()
-		hostList, err := c.SrvlogHosts(ctx)
-		if err != nil {
-			return ErrorMsg{Err: fmt.Errorf("srvlog hosts: %w", err)}
+	for _, t := range a.feeds {
+		if t.connected() {
+			return true
 		}
-		progList, err := c.SrvlogPrograms(ctx)
-		if err != nil {
-			return ErrorMsg{Err: fmt.Errorf("srvlog programs: %w", err)}
-		}
-		return MetaLoadedMsg{Feed: "srvlog", Meta: srvlog.Meta(hostList, progList)}
 	}
-}
-
-func (a *App) loadApplogMeta() tea.Cmd {
-	c := a.client
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), metaLoadTimeout)
-		defer cancel()
-		svcList, err := c.AppLogServices(ctx)
-		if err != nil {
-			return ErrorMsg{Err: fmt.Errorf("applog services: %w", err)}
-		}
-		compList, err := c.AppLogComponents(ctx)
-		if err != nil {
-			return ErrorMsg{Err: fmt.Errorf("applog components: %w", err)}
-		}
-		hostList, err := c.AppLogHosts(ctx)
-		if err != nil {
-			return ErrorMsg{Err: fmt.Errorf("applog hosts: %w", err)}
-		}
-		return MetaLoadedMsg{Feed: "applog", Meta: applog.Meta(svcList, compList, hostList)}
-	}
-}
-
-func (a *App) loadNetlogMeta() tea.Cmd {
-	c := a.client
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), metaLoadTimeout)
-		defer cancel()
-		hostList, err := c.NetlogHosts(ctx)
-		if err != nil {
-			return ErrorMsg{Err: fmt.Errorf("netlog hosts: %w", err)}
-		}
-		progList, err := c.NetlogPrograms(ctx)
-		if err != nil {
-			return ErrorMsg{Err: fmt.Errorf("netlog programs: %w", err)}
-		}
-		return MetaLoadedMsg{Feed: "netlog", Meta: srvlog.Meta(hostList, progList)}
-	}
+	return a.dashboard.Connected()
 }

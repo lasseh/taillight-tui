@@ -39,10 +39,12 @@ func (a *App) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// Commit the search: restart the tab's stream so the server
 			// applies the new search param (filtering is server-side).
 			a.focus = FocusTable
-			a.blurActiveFilter()
-			cmd := a.restartStream(a.activeTab)
+			if t, ok := a.feeds[a.activeTab]; ok {
+				t.BlurFilter()
+				t.restart()
+			}
 			a.syncFilterPills()
-			return a, cmd
+			return a, nil
 		}
 		if key.Matches(msg, a.keys.Escape) {
 			a.focus = FocusTable
@@ -141,39 +143,23 @@ func (a *App) closePopup() {
 // activeFilterFields builds the popup fields for the active tab's filter.
 // Returns nil when the tab has no associated filter (dashboard).
 func (a *App) activeFilterFields() []component.Field {
-	switch a.activeTab {
-	case TabSrvlog:
-		return a.srvlog.PopupFields()
-	case TabNetlog:
-		return a.netlog.PopupFields()
-	case TabApplog:
-		return a.applog.PopupFields()
-	case TabDashboard:
-		return nil
+	if t, ok := a.feeds[a.activeTab]; ok {
+		return t.PopupFields()
 	}
 	return nil
 }
 
 // applyPopupFilter commits values to the active view's filter and restarts
 // that tab's SSE stream so the server-side filters take effect immediately.
-func (a *App) applyPopupFilter(values map[string]string) tea.Cmd {
+func (a *App) applyPopupFilter(values map[string]string) {
 	a.closePopup()
-	var cmd tea.Cmd
-	switch a.activeTab {
-	case TabSrvlog:
-		a.srvlog.ApplyPopupValues(values)
-		cmd = a.restartStream(TabSrvlog)
-	case TabNetlog:
-		a.netlog.ApplyPopupValues(values)
-		cmd = a.restartStream(TabNetlog)
-	case TabApplog:
-		a.applog.ApplyPopupValues(values)
-		cmd = a.restartStream(TabApplog)
-	case TabDashboard:
-		return nil
+	t, ok := a.feeds[a.activeTab]
+	if !ok {
+		return
 	}
+	t.ApplyPopupValues(values)
+	t.restart()
 	a.syncFilterPills()
-	return cmd
 }
 
 // syncFilterPills refreshes the status bar pills from the params the active
@@ -182,58 +168,10 @@ func (a *App) applyPopupFilter(values map[string]string) tea.Cmd {
 // filtering in effect, never half-typed input.
 func (a *App) syncFilterPills() {
 	var pills []string
-	encoded := a.streamParams[a.activeTab]
-	switch a.activeTab {
-	case TabSrvlog:
-		pills = a.srvlog.Pills(encoded)
-	case TabNetlog:
-		pills = a.netlog.Pills(encoded)
-	case TabApplog:
-		pills = a.applog.Pills(encoded)
-	case TabDashboard:
+	if t, ok := a.feeds[a.activeTab]; ok {
+		pills = t.pills()
 	}
 	a.statusBar.SetFilters(pills)
-}
-
-// restartStream closes the active stream for the tab (if any), clears the
-// view's buffer so stale non-matching events don't linger, and starts a fresh
-// stream with the current filter parameters. No-op when the parameters are
-// unchanged — restarting would needlessly wipe the buffer for an identical
-// stream. The new stream's server-side backfill repopulates the view with
-// recent matching events.
-func (a *App) restartStream(tab TabID) tea.Cmd {
-	switch tab {
-	case TabSrvlog:
-		if a.srvlogStream != nil && a.streamParams[tab] == a.srvlog.Params().Encode() {
-			return nil
-		}
-		if a.srvlogStream != nil {
-			a.srvlogStream.Close()
-			a.srvlogStream = nil
-		}
-		a.srvlog.ClearEvents()
-	case TabApplog:
-		if a.applogStream != nil && a.streamParams[tab] == a.applog.Params().Encode() {
-			return nil
-		}
-		if a.applogStream != nil {
-			a.applogStream.Close()
-			a.applogStream = nil
-		}
-		a.applog.ClearEvents()
-	case TabNetlog:
-		if a.netlogStream != nil && a.streamParams[tab] == a.netlog.Params().Encode() {
-			return nil
-		}
-		if a.netlogStream != nil {
-			a.netlogStream.Close()
-			a.netlogStream = nil
-		}
-		a.netlog.ClearEvents()
-	case TabDashboard:
-		return nil
-	}
-	return a.startStream(tab)
 }
 
 // Active view delegation helpers.
@@ -242,89 +180,41 @@ func (a *App) restartStream(tab TabID) tea.Cmd {
 // any tea.Cmd from the underlying textinput (e.g., cursor blink) which the
 // caller must forward to bubbletea.
 func (a *App) focusActiveFilter() tea.Cmd {
-	switch a.activeTab {
-	case TabSrvlog:
-		return a.srvlog.FocusFilter()
-	case TabApplog:
-		return a.applog.FocusFilter()
-	case TabNetlog:
-		return a.netlog.FocusFilter()
-	case TabDashboard:
+	if t, ok := a.feeds[a.activeTab]; ok {
+		return t.FocusFilter()
 	}
 	return nil
 }
 
 func (a *App) blurActiveFilter() {
-	switch a.activeTab {
-	case TabSrvlog:
-		a.srvlog.BlurFilter()
-	case TabApplog:
-		a.applog.BlurFilter()
-	case TabNetlog:
-		a.netlog.BlurFilter()
-	case TabDashboard:
+	if t, ok := a.feeds[a.activeTab]; ok {
+		t.BlurFilter()
 	}
 }
 
 func (a *App) updateActiveFilter(msg tea.Msg) tea.Cmd {
-	switch a.activeTab {
-	case TabSrvlog:
-		var cmd tea.Cmd
-		a.srvlog, cmd = a.srvlog.UpdateFilter(msg)
-		return cmd
-	case TabApplog:
-		var cmd tea.Cmd
-		a.applog, cmd = a.applog.UpdateFilter(msg)
-		return cmd
-	case TabNetlog:
-		var cmd tea.Cmd
-		a.netlog, cmd = a.netlog.UpdateFilter(msg)
-		return cmd
-	default:
-		return nil
+	if t, ok := a.feeds[a.activeTab]; ok {
+		return t.UpdateFilter(msg)
 	}
+	return nil
 }
 
 func (a *App) updateActiveTable(msg tea.Msg) tea.Cmd {
-	switch a.activeTab {
-	case TabSrvlog:
-		var cmd tea.Cmd
-		a.srvlog, cmd = a.srvlog.UpdateTable(msg)
-		if a.srvlog.DetailOpen() {
-			a.focus = FocusDetail
-		}
-		return cmd
-	case TabApplog:
-		var cmd tea.Cmd
-		a.applog, cmd = a.applog.UpdateTable(msg)
-		if a.applog.DetailOpen() {
-			a.focus = FocusDetail
-		}
-		return cmd
-	case TabNetlog:
-		var cmd tea.Cmd
-		a.netlog, cmd = a.netlog.UpdateTable(msg)
-		if a.netlog.DetailOpen() {
-			a.focus = FocusDetail
-		}
-		return cmd
-	case TabDashboard:
+	t, ok := a.feeds[a.activeTab]
+	if !ok {
 		var cmd tea.Cmd
 		a.dashboard, cmd = a.dashboard.Update(msg)
 		return cmd
-	default:
-		return nil
 	}
+	cmd := t.UpdateTable(msg)
+	if t.DetailOpen() {
+		a.focus = FocusDetail
+	}
+	return cmd
 }
 
 func (a *App) closeActiveDetail() {
-	switch a.activeTab {
-	case TabSrvlog:
-		a.srvlog.CloseDetail()
-	case TabApplog:
-		a.applog.CloseDetail()
-	case TabNetlog:
-		a.netlog.CloseDetail()
-	case TabDashboard:
+	if t, ok := a.feeds[a.activeTab]; ok {
+		t.CloseDetail()
 	}
 }
