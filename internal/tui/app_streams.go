@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -13,36 +14,38 @@ func (a *App) sseTick() tea.Cmd {
 	})
 }
 
-// drainAllStreams moves pending events from every live feed into its view.
-// Alerting events also trigger toast notifications. Tracks JSON parse
-// failures so the user is alerted via the status bar. Returns a Cmd raising
-// an ErrorMsg when a stream stopped for good (e.g. the API key was revoked
-// mid-session), so the failure is visible instead of a silently dead tab.
+// drainAllStreams moves pending events from every live feed — log tabs and
+// the dashboard's panels — into its view. Alerting events also trigger toast
+// notifications. Tracks JSON parse failures so the user is alerted via the
+// status bar. Returns a Cmd raising an ErrorMsg when a stream stopped for
+// good (e.g. the API key was revoked mid-session), so the failure is visible
+// instead of a silently dead tab.
 func (a *App) drainAllStreams() tea.Cmd {
-	var stopped error
+	var stopped []error
 	for _, id := range AllTabs {
 		if t, ok := a.feeds[id]; ok {
 			n, err := t.drain(&a.toasts)
 			a.parseErrors += n
-			if err != nil && stopped == nil {
-				stopped = err
-			}
+			stopped = append(stopped, err)
 		}
 	}
+	n, err := a.dashboard.Drain()
+	a.parseErrors += n
+	stopped = append(stopped, err)
 	a.statusBar.SetParseErrors(a.parseErrors)
 
 	// Prune expired toasts.
 	a.toasts.Prune()
 	a.statusBar.SetConnected(a.isConnected())
 
-	if stopped == nil {
-		return nil
+	if err := errors.Join(stopped...); err != nil {
+		return func() tea.Msg { return ErrorMsg{Err: err} }
 	}
-	return func() tea.Msg { return ErrorMsg{Err: stopped} }
+	return nil
 }
 
 // isConnected returns true if ANY SSE stream is currently connected.
-// Checks all log-view streams AND the dashboard's own streams.
+// Checks all log-tab feeds AND the dashboard's feeds.
 func (a *App) isConnected() bool {
 	for _, t := range a.feeds {
 		if t.connected() {

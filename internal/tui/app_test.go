@@ -20,9 +20,20 @@ const (
 	applogPath = "/api/v1/applog/stream"
 )
 
-// newTestApp returns an App whose streams are in-memory, so tests drive the
-// real Update paths without network connections.
+// newTestApp returns an initialised App whose streams are in-memory, so
+// tests drive the real Update paths without network connections. The
+// returned opener records only streams opened after Init; the dashboard's
+// feeds (opened by Init) are covered by TestDashboardFeeds.
 func newTestApp(t *testing.T) (*App, *feedtest.Opener) {
+	t.Helper()
+	a, open := newRawTestApp(t)
+	a.Init()
+	open.Opened = nil
+	return a, open
+}
+
+// newRawTestApp is newTestApp without Init.
+func newRawTestApp(t *testing.T) (*App, *feedtest.Opener) {
 	t.Helper()
 	open := &feedtest.Opener{}
 	a := newApp(DefaultConfig(), nil, open.Open)
@@ -301,10 +312,54 @@ func runBatch(cmd tea.Cmd) []tea.Msg {
 	return msgs
 }
 
+// TestDashboardFeeds guards the dashboard's live panels: Init opens the
+// critical and error feeds with their fixed filters, the app tick drains
+// them (counting parse errors), and a dashboard stream rejected mid-session
+// raises the auth error like any log tab.
+func TestDashboardFeeds(t *testing.T) {
+	a, open := newRawTestApp(t)
+	a.Init()
+	a.Update(dashboard.StatsLoadedMsg{Srvlog: &client.StatsSummary{}})
+
+	crit, errs := open.Last(srvlogPath), open.Last(applogPath)
+	if crit == nil || errs == nil {
+		t.Fatalf("Init opened %d streams, want critical + error feeds", len(open.Opened))
+	}
+	if got := crit.Params.Encode(); got != "severity_max=2" {
+		t.Errorf("critical feed params = %q, want severity_max=2", got)
+	}
+	if got := errs.Params.Encode(); got != "level=WARN" {
+		t.Errorf("error feed params = %q, want level=WARN", got)
+	}
+
+	crit.Send(t, client.SrvlogEvent{ID: 1, Severity: 2, Hostname: "core-sw-01", SeverityLabel: "crit"})
+	errs.SendRaw("{not json")
+	a.Update(SSETickMsg{})
+	if got := a.dashboard.View(); !strings.Contains(got, "core-sw-01") {
+		t.Errorf("dashboard missing drained critical event\n%s", got)
+	}
+	if a.parseErrors != 1 {
+		t.Errorf("parseErrors = %d, want 1 (dashboard parse errors count too)", a.parseErrors)
+	}
+
+	errs.Fail(client.ErrUnauthorized)
+	_, cmd := a.Update(SSETickMsg{})
+	var gotErr error
+	for _, msg := range runBatch(cmd) {
+		if e, ok := msg.(ErrorMsg); ok {
+			gotErr = e.Err
+		}
+	}
+	if !errors.Is(gotErr, client.ErrUnauthorized) {
+		t.Errorf("tick after dashboard auth failure raised %v, want ErrUnauthorized", gotErr)
+	}
+}
+
 // TestCleanupClosesStreams guards against leaking streams when a session
 // ends (critical for the wish server).
 func TestCleanupClosesStreams(t *testing.T) {
-	a, open := newTestApp(t)
+	a, open := newRawTestApp(t)
+	a.Init()
 	a.switchTab(TabSrvlog)
 	a.switchTab(TabApplog)
 	a.Cleanup()

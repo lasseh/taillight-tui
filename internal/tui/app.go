@@ -124,7 +124,7 @@ func newApp(cfg Config, c *client.Client, open feed.Opener) *App {
 		activeTab: TabDashboard,
 		focus:     FocusTable,
 		feeds:     newLogTabs(cfg, c, open),
-		dashboard: dashboard.New(c),
+		dashboard: dashboard.New(c, open),
 		toasts:    component.NewToastQueue(),
 		tabBar:    component.NewTabBar(tabs),
 		statusBar: component.NewStatusBar(),
@@ -173,16 +173,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dashboard.StatsLoadedMsg:
 		a.dashboard, _ = a.dashboard.Update(msg)
 		return a, nil
-
-	case dashboard.StreamsStartedMsg:
-		var cmd tea.Cmd
-		a.dashboard, cmd = a.dashboard.Update(msg)
-		return a, cmd
-
-	case dashboard.StreamTickMsg:
-		var cmd tea.Cmd
-		a.dashboard, cmd = a.dashboard.Update(msg)
-		return a, cmd
 
 	case dashboard.RefreshTickMsg:
 		if a.activeTab == TabDashboard {

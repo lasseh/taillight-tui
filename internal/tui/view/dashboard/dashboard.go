@@ -16,6 +16,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/lasseh/taillight-tui/internal/tui/client"
+	"github.com/lasseh/taillight-tui/internal/tui/feed"
 	"github.com/lasseh/taillight-tui/internal/tui/highlight"
 	"github.com/lasseh/taillight-tui/internal/tui/theme"
 )
@@ -46,38 +47,63 @@ type Model struct {
 	width        int
 	height       int
 
-	// Live SSE streams for critical/error events.
-	srvlogStream *client.SSEStream
-	applogStream *client.SSEStream
+	// Live feeds for the recent-events panels.
+	criticalFeed *feed.Feed[client.SrvlogEvent]
+	errorFeed    *feed.Feed[client.AppLogEvent]
 }
 
-// New creates a new dashboard model.
-func New(c *client.Client) Model {
-	return Model{client: c, loading: true}
+// Live feed filters: srvlog severity ≤ 2 (emerg, alert, crit) and applog
+// WARN and above, matching the REST queries in loadStats.
+var (
+	criticalParams = url.Values{"severity_max": {"2"}}
+	errorParams    = url.Values{"level": {"WARN"}}
+)
+
+// drainBatch caps how many events one tick drains from each feed.
+const drainBatch = 50
+
+// New creates a new dashboard model. Its live feeds open through open.
+func New(c *client.Client, open feed.Opener) Model {
+	return Model{
+		client:       c,
+		loading:      true,
+		criticalFeed: feed.New[client.SrvlogEvent]("/api/v1/srvlog/stream", open),
+		errorFeed:    feed.New[client.AppLogEvent]("/api/v1/applog/stream", open),
+	}
 }
 
-// Connected reports whether any of the dashboard's SSE streams are connected.
+// Connected reports whether any of the dashboard's feeds are connected.
 func (m *Model) Connected() bool {
-	if m.srvlogStream != nil && m.srvlogStream.Connected() {
-		return true
-	}
-	if m.applogStream != nil && m.applogStream.Connected() {
-		return true
-	}
-	return false
+	return m.criticalFeed.Connected() || m.errorFeed.Connected()
 }
 
-// Close releases the SSE streams held by the dashboard. Called from the
-// app's Cleanup() to prevent goroutine and connection leaks.
+// Close releases the dashboard's feeds. Called from the app's Cleanup() to
+// prevent goroutine and connection leaks.
 func (m *Model) Close() {
-	if m.srvlogStream != nil {
-		m.srvlogStream.Close()
-		m.srvlogStream = nil
+	m.criticalFeed.Close()
+	m.errorFeed.Close()
+}
+
+// startFeeds opens any feed that isn't running.
+func (m *Model) startFeeds() {
+	m.criticalFeed.Start(criticalParams)
+	m.errorFeed.Start(errorParams)
+}
+
+// Drain moves pending live events into the recent-events panels. The app
+// calls it on its SSE tick. It returns the count of undecodable payloads and
+// the error of a feed that stopped for good; a manual refresh reopens it.
+func (m *Model) Drain() (parseErrors int, err error) {
+	crit, critParse, critErr := m.criticalFeed.Drain(drainBatch)
+	m.criticalLogs = prependCapped(crit, m.criticalLogs)
+	errs, errParse, errErr := m.errorFeed.Drain(drainBatch)
+	m.recentErrors = prependCapped(errs, m.recentErrors)
+	if critErr != nil {
+		err = critErr
+	} else {
+		err = errErr
 	}
-	if m.applogStream != nil {
-		m.applogStream.Close()
-		m.applogStream = nil
-	}
+	return critParse + errParse, err
 }
 
 // SetSize updates dimensions.
@@ -86,38 +112,10 @@ func (m *Model) SetSize(width, height int) {
 	m.height = height
 }
 
-// Init returns the initial load command and starts live SSE streams.
+// Init opens the live feeds and returns the initial load command.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.loadStats(), m.refreshTick(), m.startStreams())
-}
-
-// StreamTickMsg triggers draining the dashboard SSE streams.
-type StreamTickMsg struct{}
-
-func (m Model) streamTick() tea.Cmd {
-	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
-		return StreamTickMsg{}
-	})
-}
-
-func (m *Model) startStreams() tea.Cmd {
-	c := m.client
-	return func() tea.Msg {
-		// Srvlog stream filtered to severity ≤ 2 (emerg, alert, crit).
-		srvParams := url.Values{"severity_max": {"2"}}
-		srvStream := client.NewSSEStream(c, "/api/v1/srvlog/stream", srvParams, 0)
-
-		// Applog stream filtered to WARN and above.
-		appParams := url.Values{"level": {"WARN"}}
-		appStream := client.NewSSEStream(c, "/api/v1/applog/stream", appParams, 0)
-
-		return StreamsStartedMsg{srvlog: srvStream, applog: appStream}
-	}
-}
-
-type StreamsStartedMsg struct {
-	srvlog *client.SSEStream
-	applog *client.SSEStream
+	m.startFeeds()
+	return tea.Batch(m.loadStats(), m.refreshTick())
 }
 
 // Update handles messages.
@@ -139,20 +137,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.recentErrors = msg.RecentErrors
 		return m, nil
 
-	case StreamsStartedMsg:
-		m.srvlogStream = msg.srvlog
-		m.applogStream = msg.applog
-		return m, m.streamTick()
-
-	case StreamTickMsg:
-		m = m.drainStreams()
-		return m, m.streamTick()
-
 	case RefreshTickMsg:
 		return m, tea.Batch(m.loadStats(), m.refreshTick())
 
 	case tea.KeyPressMsg:
 		if key.Matches(msg, refreshKey) {
+			m.startFeeds()
 			m.loading = true
 			cmd := m.loadStats()
 			return m, cmd
@@ -355,16 +345,6 @@ func (m *Model) renderApplogCards() string {
 	infos := miniCard(cardW, "Info", formatCount(infoCnt), theme.ColorTeal, "")
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, total, " ", fatalErr, " ", warns, " ", infos)
-}
-
-// --- Live stream draining ---
-
-func (m Model) drainStreams() Model {
-	crit, _ := client.Drain[client.SrvlogEvent](m.srvlogStream, 50)
-	m.criticalLogs = prependCapped(crit, m.criticalLogs)
-	errs, _ := client.Drain[client.AppLogEvent](m.applogStream, 50)
-	m.recentErrors = prependCapped(errs, m.recentErrors)
-	return m
 }
 
 // prependCapped prepends a drained batch (arrival order, oldest first) to
