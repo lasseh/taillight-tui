@@ -28,13 +28,13 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/ssh"
 	"charm.land/wish/v2"
 	"charm.land/wish/v2/activeterm"
 	"charm.land/wish/v2/logging"
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/charmbracelet/colorprofile"
-	"github.com/charmbracelet/ssh"
 	"github.com/lasseh/taillight-tui/internal/tui"
 	"github.com/lasseh/taillight-tui/internal/tui/client"
 	"github.com/lasseh/taillight/pkg/logshipper"
