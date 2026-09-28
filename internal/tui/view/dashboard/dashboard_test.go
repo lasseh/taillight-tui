@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lasseh/taillight-tui/internal/tui/client"
+	"github.com/lasseh/taillight-tui/internal/tui/feed/feedtest"
 )
 
 func TestUpdateStatsLoaded(t *testing.T) {
@@ -66,6 +67,28 @@ func TestUpdateStatsLoaded(t *testing.T) {
 				t.Errorf("srvlog = %v, want %v", got.srvlog, tt.wantStats)
 			}
 		})
+	}
+}
+
+// TestDrainReportsEveryStoppedFeed guards against a silently dead panel: when
+// both feeds stop in the same tick (revoked key), both errors must surface,
+// since a feed drops its stream once it has returned the error.
+func TestDrainReportsEveryStoppedFeed(t *testing.T) {
+	open := &feedtest.Opener{}
+	m := New(nil, open.Open)
+	m.Init()
+	for _, s := range open.Opened {
+		s.Fail(client.ErrUnauthorized)
+	}
+
+	_, err := m.Drain()
+	if !errors.Is(err, client.ErrUnauthorized) {
+		t.Fatalf("Drain() err = %v, want ErrUnauthorized", err)
+	}
+	for _, path := range []string{"/api/v1/srvlog/stream", "/api/v1/applog/stream"} {
+		if !strings.Contains(err.Error(), path) {
+			t.Errorf("Drain() err = %q, missing stopped feed %s", err, path)
+		}
 	}
 }
 

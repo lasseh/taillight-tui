@@ -5,6 +5,7 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"net/url"
@@ -92,18 +93,15 @@ func (m *Model) startFeeds() {
 
 // Drain moves pending live events into the recent-events panels. The app
 // calls it on its SSE tick. It returns the count of undecodable payloads and
-// the error of a feed that stopped for good; a manual refresh reopens it.
+// the errors of feeds that stopped for good, joined; a manual refresh reopens
+// them. Both are reported: a feed drops its stream when it returns the error,
+// so an error not returned here is lost.
 func (m *Model) Drain() (parseErrors int, err error) {
 	crit, critParse, critErr := m.criticalFeed.Drain(drainBatch)
 	m.criticalLogs = prependCapped(crit, m.criticalLogs)
 	errs, errParse, errErr := m.errorFeed.Drain(drainBatch)
 	m.recentErrors = prependCapped(errs, m.recentErrors)
-	if critErr != nil {
-		err = critErr
-	} else {
-		err = errErr
-	}
-	return critParse + errParse, err
+	return critParse + errParse, errors.Join(critErr, errErr)
 }
 
 // SetSize updates dimensions.
