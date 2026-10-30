@@ -10,7 +10,7 @@ require (
 	charm.land/wish/v2 v2.0.5
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.9
-	github.com/lasseh/jink v0.1.2
+	github.com/lasseh/jink v0.2.0
 	github.com/lasseh/taillight/pkg/logshipper v0.0.0-20261030095237-d682d8afe443
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.58.0
