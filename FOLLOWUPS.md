@@ -15,7 +15,7 @@ golden-fixture contract tests, plus seven functional bug fixes. The
 ## Remaining
 
 - **Tag `pkg/logshipper` and pin it.** This repo tracks logshipper via a
-  pseudo-version of the main repo's `main` (`02e754b`, includes the
+  pseudo-version of the main repo's `main` (`d682d8a`, includes the
   `f14db64` ingest-contract fix). The main repo's ADR-0005 tags root `v*`
   releases, which don't version the `pkg/logshipper` submodule; cut a
   `pkg/logshipper/v*` tag there, then `go get` the tag here.

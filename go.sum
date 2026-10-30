@@ -53,8 +53,8 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/lasseh/jink v0.1.2 h1:Olc7SbpdVDQKj0FSFFC61Rr3yD5qczLM4tC8UZMT/nc=
 github.com/lasseh/jink v0.1.2/go.mod h1:vMQ20UAAG073236XLw87xNIUavTFYzcxUcQWfyJ5S+s=
-github.com/lasseh/taillight/pkg/logshipper v0.0.0-20260921093226-02e754b4ae81 h1:8HEQJG5hr2GWmfhjynC1KMdufwfd0dyseh6CUb1qR2A=
-github.com/lasseh/taillight/pkg/logshipper v0.0.0-20260921093226-02e754b4ae81/go.mod h1:GOOpCI51irWnlcEgzBLhUcpOhKtxfjY3zhHYF8IvNhg=
+github.com/lasseh/taillight/pkg/logshipper v0.0.0-20261030095237-d682d8afe443 h1:DhRraxG5PV2sYiMa8ead9PNmeENsclIAobaRxBvBOHU=
+github.com/lasseh/taillight/pkg/logshipper v0.0.0-20261030095237-d682d8afe443/go.mod h1:GOOpCI51irWnlcEgzBLhUcpOhKtxfjY3zhHYF8IvNhg=
 github.com/lucasb-eyer/go-colorful v1.4.1 h1:1EO+WB73+EH8EVbzlrG3KLAfEypQWVHIBqlTf+2hNss=
 github.com/lucasb-eyer/go-colorful v1.4.1/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/mattn/go-runewidth v0.0.30 h1:+KUuiDA4fF0R1p5FeueHefjDm+GIM+kWfFnDjybOPgk=
